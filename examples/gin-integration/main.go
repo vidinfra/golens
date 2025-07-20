@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/vidinfra/golens/pkg/filter"
+	"github.com/vidinfra/golens/filter"
 )
 
 type Product struct {

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/vidinfra/golens/pkg/filter"
+	"github.com/vidinfra/golens/filter"
 )
 
 func TestAllowedFilter(t *testing.T) {

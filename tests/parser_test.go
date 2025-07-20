@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/vidinfra/golens/pkg/filter"
+	"github.com/vidinfra/golens/filter"
 )
 
 func TestParser_Parse(t *testing.T) {

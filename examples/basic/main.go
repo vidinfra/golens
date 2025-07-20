@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/uptrace/bun"
-	"github.com/vidinfra/golens/pkg/filter"
+	"github.com/vidinfra/golens/filter"
 )
 
 type User struct {

@@ -3,7 +3,7 @@ package filter_test
 import (
 	"testing"
 
-	"github.com/vidinfra/golens/pkg/filter"
+	"github.com/vidinfra/golens/filter"
 )
 
 func TestValidator_IsFilterAllowed(t *testing.T) {
