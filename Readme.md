@@ -16,7 +16,7 @@ A flexible and powerful filtering library for Go applications, particularly desi
 ## Installation
 
 ```bash
-go get github.com/vidinfra/lens
+go get github.com/vidinfra/golens
 ```
 
 ## Quick Start
