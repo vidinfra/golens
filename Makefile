@@ -1,4 +1,3 @@
-// File: Makefile
 .PHONY: test test-race test-cover lint fmt clean build install-tools
 
 # Test commands
@@ -26,6 +25,9 @@ fmt:
 vet:
 	go vet ./...
 
+fieldalignment:
+	go vet -vettool=$(which fieldalignment) ./...
+
 # Build
 build:
 	go build ./...
@@ -39,6 +41,7 @@ clean:
 install-tools:
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
 
 # Run examples
 run-basic:

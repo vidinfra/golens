@@ -89,20 +89,20 @@ func (b *Builder) Query() *bun.SelectQuery {
 	return b.query
 }
 
-func (b *Builder) parse() []Filter {
-	return b.parser.Parse()
-}
+// func (b *Builder) parse() []Filter {
+// 	return b.parser.Parse()
+// }
 
-func (b *Builder) applyFilters(q *bun.SelectQuery, filters []Filter) *bun.SelectQuery {
-	if b.applier == nil {
-		b.updateValidator()
-	}
-	return b.applier.ApplyFilters(q, filters)
-}
+// func (b *Builder) applyFilters(q *bun.SelectQuery, filters []Filter) *bun.SelectQuery {
+// 	if b.applier == nil {
+// 		b.updateValidator()
+// 	}
+// 	return b.applier.ApplyFilters(q, filters)
+// }
 
-func (b *Builder) isFilterAllowedByConfig(filter Filter) bool {
-	if b.validator == nil {
-		b.updateValidator()
-	}
-	return b.validator.isFilterAllowedByConfig(filter)
-}
+// func (b *Builder) isFilterAllowedByConfig(filter Filter) bool {
+// 	if b.validator == nil {
+// 		b.updateValidator()
+// 	}
+// 	return b.validator.isFilterAllowedByConfig(filter)
+// }

@@ -227,8 +227,10 @@ func TestBuilder_FilterGeneration(t *testing.T) {
 			var builder *filter.Builder
 			if len(tt.configs) > 0 {
 				// builder = filter.New(c, mockQuery).AllowConfigs(tt.configs...)
+				fmt.Println("if on tt.configs")
 			} else {
 				// builder = filter.New(c, mockQuery).AllowFields(tt.allowedFields...)
+				fmt.Println("else on tt.configs")
 			}
 
 			// Apply filters
