@@ -27,7 +27,7 @@ package main
 import (
     "github.com/gin-gonic/gin"
     "github.com/uptrace/bun"
-    "github.com/vidinfra/lens/pkg/filter"
+    "github.com/vidinfra/golens/filter"
 )
 
 func main() {
