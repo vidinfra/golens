@@ -1,22 +1,13 @@
-.PHONY: test test-race test-cover lint fmt clean build install-tools
+.PHONY: test test-race test-bench fmt vet lint install-tools fieldalignment
 
-# Test commands
 test:
 	go test -v ./...
 
 test-race:
 	go test -race -v ./...
 
-test-cover:
-	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
-
 test-bench:
 	go test -bench=. -benchmem ./...
-
-# Code quality
-lint:
-	golangci-lint run
 
 fmt:
 	gofmt -s -w .
@@ -25,36 +16,20 @@ fmt:
 vet:
 	go vet ./...
 
-fieldalignment:
-	go vet -vettool=$(which fieldalignment) ./...
+lint:
+	golangci-lint run
 
-# Build
+fieldalignment:
+	fieldalignment ./...
+
 build:
 	go build ./...
 
-# Clean
 clean:
 	go clean ./...
 	rm -f coverage.out coverage.html
 
-# Install development tools
 install-tools:
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
-
-# Run examples
-run-basic:
-	cd examples/basic && go run main.go
-
-run-advanced:
-	cd examples/advanced && go run main.go
-
-run-integration:
-	cd examples/gin-integration && go run main.go
-
-# Development workflow
-dev: fmt vet lint test
-
-# Release preparation
-release: clean fmt vet lint test-race test-cover
