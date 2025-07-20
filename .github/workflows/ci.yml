@@ -10,9 +10,9 @@ jobs:
   test:
     name: → Run Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [1.21, 1.22, 1.23]
+    # strategy:
+    #   matrix:
+    #     go-version: [1.21, 1.22, 1.23]
     
     steps:
       - name: 📥 Checkout code
@@ -57,7 +57,7 @@ jobs:
       - name: 🧰 Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version-file: 'go.mod'
 
       - name: 🛠️ Install dev tools
         run: make install-tools
@@ -95,10 +95,10 @@ jobs:
       - name: 🧰 Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version-file: 'go.mod'
 
       - name: 🔍 Run govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-input: '1.23'
+          go-version-file: 'go.mod'
           go-package: './...'
