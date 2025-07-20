@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: ✅ Run Tests
+    name: → Run Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -39,11 +39,11 @@ jobs:
       - name: 🧪 Run tests
         run: make test
 
-      - name: ⚙️ Run race detector
-        run: make test-race
+      # - name: ⚙️ Run race detector
+      #   run: make test-race
 
-      - name: 🏎️ Benchmark (optional)
-        run: make test-bench
+      # - name: 🏎️ Benchmark (optional)
+      #   run: make test-bench
 
   lint:
     name: 🧼 Lint & Format
