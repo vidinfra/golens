@@ -9,11 +9,11 @@ import (
 )
 
 type User struct {
-	ID     int    `json:"id" bun:"id,pk,autoincrement"`
 	Name   string `json:"name" bun:"name"`
 	Email  string `json:"email" bun:"email"`
-	Age    int    `json:"age" bun:"age"`
 	Status string `json:"status" bun:"status"`
+	ID     int    `json:"id" bun:"id,pk,autoincrement"`
+	Age    int    `json:"age" bun:"age"`
 }
 
 func main() {

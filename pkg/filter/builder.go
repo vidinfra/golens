@@ -9,13 +9,13 @@ import (
 type Builder struct {
 	ctx           *gin.Context
 	query         *bun.SelectQuery
+	parser        *Parser
+	validator     *Validator
+	applier       *Applier
 	allowedFields []string
 	allowedSorts  []string
 	configs       []FilterConfig
 	useConfigs    bool
-	parser        *Parser
-	validator     *Validator
-	applier       *Applier
 }
 
 func New(c *gin.Context, q *bun.SelectQuery) *Builder {

@@ -8,10 +8,10 @@ import (
 
 func TestValidator_IsFilterAllowed(t *testing.T) {
 	tests := []struct {
+		filter        filter.Filter
 		name          string
 		allowedFields []string
 		configs       []filter.FilterConfig
-		filter        filter.Filter
 		expected      bool
 	}{
 		{

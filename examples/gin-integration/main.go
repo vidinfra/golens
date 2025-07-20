@@ -12,13 +12,13 @@ import (
 )
 
 type Product struct {
-	ID          int     `json:"id" bun:"id,pk,autoincrement"`
 	Name        string  `json:"name" bun:"name"`
 	Description string  `json:"description" bun:"description"`
-	Price       float64 `json:"price" bun:"price"`
 	Category    string  `json:"category" bun:"category"`
 	Status      string  `json:"status" bun:"status"`
 	CreatedAt   string  `json:"created_at" bun:"created_at"`
+	ID          int     `json:"id" bun:"id,pk,autoincrement"`
+	Price       float64 `json:"price" bun:"price"`
 }
 
 func main() {
@@ -90,9 +90,9 @@ func main() {
 }
 
 type User struct {
-	ID        int    `json:"id" bun:"id,pk,autoincrement"`
 	Name      string `json:"name" bun:"name"`
 	Email     string `json:"email" bun:"email"`
 	Status    string `json:"status" bun:"status"`
 	CreatedAt string `json:"created_at" bun:"created_at"`
+	ID        int    `json:"id" bun:"id,pk,autoincrement"`
 }
