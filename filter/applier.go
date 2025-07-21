@@ -24,7 +24,6 @@ func (a *Applier) validateFilter(filter Filter) *FilterError {
 		return a.validator.ValidateFilter(filter)
 	}
 
-	// Basic validation if no validator is set
 	if !filter.Operator.IsValid() {
 		return NewInvalidOperatorError(string(filter.Operator))
 	}
