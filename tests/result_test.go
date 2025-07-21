@@ -11,9 +11,9 @@ import (
 
 func TestResult_HasErrors(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func() *filter.Result
-		expected bool
+		setup    func() *filter.Result // 8 bytes (pointer to function)
+		name     string                // 16 bytes (string)
+		expected bool                  // 1 byte
 	}{
 		{
 			name: "no errors",
@@ -56,10 +56,10 @@ func TestResult_HasErrors(t *testing.T) {
 
 func TestResult_GetFirstError(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func() *filter.Result
-		expected *filter.FilterError
-		isNil    bool
+		setup    func() *filter.Result // 8 bytes (pointer to function)
+		expected *filter.FilterError   // 8 bytes (pointer)
+		name     string                // 16 bytes (string)
+		isNil    bool                  // 1 byte
 	}{
 		{
 			name: "no errors",
@@ -124,9 +124,9 @@ func TestResult_GetFirstError(t *testing.T) {
 
 func TestResult_SuccessFlag(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func() *filter.Result
-		expected bool
+		setup    func() *filter.Result // 8 bytes (pointer to function)
+		name     string                // 16 bytes (string)
+		expected bool                  // 1 byte
 	}{
 		{
 			name: "new result is successful",
@@ -165,9 +165,9 @@ func TestResult_SuccessFlag(t *testing.T) {
 
 func TestResult_ErrorCount(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func() *filter.Result
-		expected int
+		setup    func() *filter.Result // 8 bytes (pointer to function)
+		name     string                // 16 bytes (string)
+		expected int                   // 8 bytes (int)
 	}{
 		{
 			name: "no errors",
@@ -210,83 +210,83 @@ func TestResult_ErrorCount(t *testing.T) {
 
 func TestFilterError_Fields(t *testing.T) {
 	tests := []struct {
-		name     string
-		error    *filter.FilterError
+		error    *filter.FilterError // 8 bytes (pointer)
 		expected struct {
-			Type        filter.ErrorType
-			Message     string
-			Field       string
-			Operator    string
-			Code        string
-			HTTPStatus  int
-			Suggestions []string
+			Suggestions []string         // 24 bytes (slice header)
+			Type        filter.ErrorType // 16 bytes (string)
+			Message     string           // 16 bytes (string)
+			Field       string           // 16 bytes (string)
+			Operator    string           // 16 bytes (string)
+			Code        string           // 16 bytes (string)
+			HTTPStatus  int              // 8 bytes (int)
 		}
+		name string // 16 bytes (string)
 	}{
 		{
 			name:  "field not allowed error",
 			error: filter.NewFieldNotAllowedError("email", []string{"name", "age"}),
 			expected: struct {
-				Type        filter.ErrorType
-				Message     string
-				Field       string
-				Operator    string
-				Code        string
-				HTTPStatus  int
-				Suggestions []string
+				Suggestions []string         // 24 bytes (slice header)
+				Type        filter.ErrorType // 16 bytes (string)
+				Message     string           // 16 bytes (string)
+				Field       string           // 16 bytes (string)
+				Operator    string           // 16 bytes (string)
+				Code        string           // 16 bytes (string)
+				HTTPStatus  int              // 8 bytes (int)
 			}{
+				Suggestions: []string{"name", "age"},
 				Type:        filter.ErrorTypeValidation,
 				Message:     "Field 'email' is not allowed for filtering",
 				Field:       "email",
 				Operator:    "",
 				Code:        "FILTER_VALIDATION_ERROR",
 				HTTPStatus:  400,
-				Suggestions: []string{"name", "age"},
 			},
 		},
 		{
 			name:  "invalid operator error",
 			error: filter.NewInvalidOperatorError("xyz"),
 			expected: struct {
-				Type        filter.ErrorType
-				Message     string
-				Field       string
-				Operator    string
-				Code        string
-				HTTPStatus  int
-				Suggestions []string
+				Suggestions []string         // 24 bytes (slice header)
+				Type        filter.ErrorType // 16 bytes (string)
+				Message     string           // 16 bytes (string)
+				Field       string           // 16 bytes (string)
+				Operator    string           // 16 bytes (string)
+				Code        string           // 16 bytes (string)
+				HTTPStatus  int              // 8 bytes (int)
 			}{
+				Suggestions: []string{
+					"eq", "ne", "like", "not-like", "starts-with", "ends-with",
+					"gt", "gte", "lt", "lte", "in", "not-in", "null", "not-null",
+					"between", "not-between",
+				},
 				Type:       filter.ErrorTypeValidation,
 				Message:    "Invalid operator 'xyz'",
 				Field:      "",
 				Operator:   "xyz",
 				Code:       "FILTER_VALIDATION_ERROR",
 				HTTPStatus: 400,
-				Suggestions: []string{
-					"eq", "ne", "like", "not-like", "starts-with", "ends-with",
-					"gt", "gte", "lt", "lte", "in", "not-in", "null", "not-null",
-					"between", "not-between",
-				},
 			},
 		},
 		{
 			name:  "missing value error",
 			error: filter.NewMissingValueError("status", "eq"),
 			expected: struct {
-				Type        filter.ErrorType
-				Message     string
-				Field       string
-				Operator    string
-				Code        string
-				HTTPStatus  int
-				Suggestions []string
+				Suggestions []string         // 24 bytes (slice header)
+				Type        filter.ErrorType // 16 bytes (string)
+				Message     string           // 16 bytes (string)
+				Field       string           // 16 bytes (string)
+				Operator    string           // 16 bytes (string)
+				Code        string           // 16 bytes (string)
+				HTTPStatus  int              // 8 bytes (int)
 			}{
+				Suggestions: []string{"Provide a non-empty value for the filter"},
 				Type:        filter.ErrorTypeValidation,
 				Message:     "Filter value cannot be empty",
 				Field:       "status",
 				Operator:    "eq",
 				Code:        "FILTER_VALIDATION_ERROR",
 				HTTPStatus:  400,
-				Suggestions: []string{"Provide a non-empty value for the filter"},
 			},
 		},
 	}
@@ -322,9 +322,9 @@ func TestFilterError_Fields(t *testing.T) {
 
 func TestResult_ToJSONResponse(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func() *filter.Result
-		expected map[string]interface{}
+		setup    func() *filter.Result  // 8 bytes (pointer to function)
+		expected map[string]interface{} // 8 bytes (pointer to map)
+		name     string                 // 16 bytes (string)
 	}{
 		{
 			name: "successful result",

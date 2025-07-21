@@ -12,8 +12,8 @@ type Parser struct {
 
 // ParseResult represents the result of parsing operations
 type ParseResult struct {
-	Filters []Filter
-	Errors  *FilterErrors
+	Errors  *FilterErrors // 8 bytes (pointer)
+	Filters []Filter      // 24 bytes (slice header)
 }
 
 func NewParser(queryValues url.Values) *Parser {

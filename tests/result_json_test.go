@@ -11,8 +11,8 @@ import (
 
 func TestResult_ToJSONResponse_ActualJSON(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func() *filter.Result
+		setup func() *filter.Result // 8 bytes (pointer to function)
+		name  string                // 16 bytes (string)
 	}{
 		{
 			name: "successful result JSON",
@@ -87,8 +87,8 @@ func TestResult_ToJSONResponse_ActualJSON(t *testing.T) {
 
 func TestResult_ToJSONResponse_ValidJSON(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func() *filter.Result
+		setup func() *filter.Result // 8 bytes (pointer to function)
+		name  string                // 16 bytes (string)
 	}{
 		{
 			name: "successful result produces valid JSON",
@@ -259,8 +259,8 @@ func TestResult_ToJSONResponse_PrettyJSON(t *testing.T) {
 
 func TestFilterError_ToJSONResponse_ActualJSON(t *testing.T) {
 	tests := []struct {
-		name  string
-		error *filter.FilterError
+		error *filter.FilterError // 8 bytes (pointer)
+		name  string              // 16 bytes (string)
 	}{
 		{
 			name:  "field not allowed error JSON",

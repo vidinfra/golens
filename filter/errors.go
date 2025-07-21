@@ -16,15 +16,15 @@ const (
 )
 
 type FilterError struct {
-	Type        ErrorType `json:"type"`
-	Message     string    `json:"message"`
-	Field       string    `json:"field,omitempty"`
-	Operator    string    `json:"operator,omitempty"`
-	Value       string    `json:"value,omitempty"`
-	Code        string    `json:"code"`
-	HTTPStatus  int       `json:"-"`
-	InternalErr error     `json:"-"`
-	Suggestions []string  `json:"suggestions,omitempty"`
+	InternalErr error     `json:"-"`                     // 16 bytes (interface: type+data pointers)
+	Suggestions []string  `json:"suggestions,omitempty"` // 24 bytes (slice header)
+	Type        ErrorType `json:"type"`                  // 16 bytes (string: ptr+len)
+	Message     string    `json:"message"`               // 16 bytes (string: ptr+len)
+	Field       string    `json:"field,omitempty"`       // 16 bytes (string: ptr+len)
+	Operator    string    `json:"operator,omitempty"`    // 16 bytes (string: ptr+len)
+	Value       string    `json:"value,omitempty"`       // 16 bytes (string: ptr+len)
+	Code        string    `json:"code"`                  // 16 bytes (string: ptr+len)
+	HTTPStatus  int       `json:"-"`                     // 8 bytes (int)
 }
 
 // Converts the error to a readable string for logging/debugging
