@@ -16,6 +16,7 @@ type Builder struct {
 	allowedSorts  []string
 	configs       []FilterConfig
 	useConfigs    bool
+	result        *Result
 }
 
 func New(c *gin.Context, q *bun.SelectQuery) *Builder {
@@ -63,8 +64,27 @@ func (b *Builder) Apply() *Builder {
 		b.updateValidator()
 	}
 
-	filters := b.parser.Parse()
-	b.query = b.applier.ApplyFilters(b.query, filters)
+	parseResult := b.parser.Parse()
+
+	b.result = NewResult(b.query)
+
+	if parseResult.Errors.HasErrors() {
+		b.result.AddErrors(parseResult.Errors.Errors...)
+	}
+
+	if len(parseResult.Filters) > 0 {
+		result, err := b.applier.ApplyFilters(b.query, parseResult.Filters)
+
+		if result.HasErrors() {
+			b.result.AddErrors(result.Errors.Errors...)
+		}
+
+		if err == nil {
+			b.query = result.Query
+			b.result.Query = result.Query
+		}
+	}
+
 	return b
 }
 
@@ -73,18 +93,49 @@ func (b *Builder) ApplySort() *Builder {
 		b.updateValidator()
 	}
 
+	if b.result == nil {
+		b.result = NewResult(b.query)
+	}
+
 	sort := b.ctx.Query("sort")
 
-	// Use builder's allowed sorts if set, otherwise fall back to allowed fields
 	allowedFields := b.allowedSorts
 	if allowedFields == nil {
 		allowedFields = b.allowedFields
 	}
 
-	b.query = b.applier.ApplySort(b.query, sort, allowedFields)
+	newQuery, sortErrors := b.applier.ApplySort(b.query, sort, allowedFields)
+	b.query = newQuery
+	b.result.Query = newQuery
+
+	for _, err := range sortErrors {
+		b.result.AddError(err)
+	}
+
 	return b
 }
 
 func (b *Builder) Query() *bun.SelectQuery {
 	return b.query
+}
+
+func (b *Builder) Result() *Result {
+	if b.result == nil {
+		return NewResult(b.query)
+	}
+	return b.result
+}
+
+func (b *Builder) HasErrors() bool {
+	if b.result == nil {
+		return false // No result = no errors
+	}
+	return b.result.HasErrors()
+}
+
+func (b *Builder) GetErrors() *FilterErrors {
+	if b.result == nil {
+		return &FilterErrors{}
+	}
+	return b.result.Errors
 }

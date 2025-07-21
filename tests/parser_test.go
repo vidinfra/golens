@@ -56,7 +56,8 @@ func TestParser_Parse(t *testing.T) {
 			values, _ := url.ParseQuery(tt.query)
 			parser := filter.NewParser(values)
 
-			filters := parser.Parse()
+			result := parser.Parse()
+			filters := result.Filters
 
 			if len(filters) != len(tt.expected) {
 				t.Fatalf("Expected %d filters, got %d", len(tt.expected), len(filters))
