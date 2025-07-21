@@ -44,25 +44,42 @@ func main() {
 			filter.AllowedFilter("created_at", filter.GreaterThan, filter.LessThan, filter.Between),
 		}
 
-		// Apply filters and sorting
-		finalQuery := filter.New(c, query).
+		// Apply filters and sorting with error handling
+		builder := filter.New(c, query).
 			AllowConfigs(configs...).
 			AllowSorts("name", "price", "created_at", "category").
 			Apply().
-			ApplySort().
-			Query()
+			ApplySort()
+
+		// Check for filter/sort errors
+		if builder.HasErrors() {
+			c.JSON(http.StatusBadRequest, builder.Result().ToJSONResponse())
+			return
+		}
+
+		finalQuery := builder.Query()
 
 		// Execute the query
 		var products []Product
 		err := finalQuery.Scan(c.Request.Context(), &products)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch products"})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"errors": []map[string]interface{}{
+					{
+						"type":    "database_error",
+						"message": "Failed to fetch products",
+						"code":    "DATABASE_ERROR",
+					},
+				},
+			})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"data":  products,
-			"count": len(products),
+			"success": true,
+			"data":    products,
+			"count":   len(products),
 		})
 	})
 
@@ -70,20 +87,39 @@ func main() {
 	r.GET("/users", func(c *gin.Context) {
 		query := db.NewSelect().Model((*User)(nil))
 
-		finalQuery := filter.New(c, query).
+		builder := filter.New(c, query).
 			AllowAll("name", "email", "status", "created_at").
 			Apply().
-			ApplySort().
-			Query()
+			ApplySort()
+
+		// Check for errors
+		if builder.HasErrors() {
+			c.JSON(http.StatusBadRequest, builder.Result().ToJSONResponse())
+			return
+		}
+
+		finalQuery := builder.Query()
 
 		var users []User
 		err := finalQuery.Scan(c.Request.Context(), &users)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"errors": []map[string]interface{}{
+					{
+						"type":    "database_error",
+						"message": "Failed to fetch users",
+						"code":    "DATABASE_ERROR",
+					},
+				},
+			})
 			return
 		}
 
-		c.JSON(http.StatusOK, users)
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    users,
+		})
 	})
 
 	r.Run(":8080")

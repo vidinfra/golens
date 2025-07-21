@@ -23,18 +23,29 @@ func main() {
 		// Simulate a database query
 		var query *bun.SelectQuery // This would be your actual bun query
 
-		// Create filter with allowed fields
-		result := filter.New(c, query).
+		// Create filter with allowed fields and error handling
+		builder := filter.New(c, query).
 			AllowFields("name", "email", "age", "status").
 			AllowSorts("name", "age", "created_at").
 			Apply().
-			ApplySort().
-			Query()
+			ApplySort()
+
+		// Check for errors
+		if builder.HasErrors() {
+			c.JSON(http.StatusBadRequest, builder.Result().ToJSONResponse())
+			return
+		}
+
+		// Get the final query
+		finalQuery := builder.Query()
 
 		// Execute your query here
-		_ = result
+		_ = finalQuery
 
-		c.JSON(http.StatusOK, gin.H{"message": "Users filtered successfully"})
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Users filtered successfully",
+			"success": true,
+		})
 	})
 
 	r.Run(":8080")
