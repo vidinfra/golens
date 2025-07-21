@@ -19,19 +19,52 @@ func NewApplier(validator *Validator) *Applier {
 	}
 }
 
-func (a *Applier) ApplyFilters(q *bun.SelectQuery, filters []Filter) *bun.SelectQuery {
-	for _, filter := range filters {
-		if a.validator != nil && !a.validator.IsFilterAllowed(filter) {
-			continue
-		}
-		q = a.applyFilter(q, filter)
+func (a *Applier) validateFilter(filter Filter) *FilterError {
+	if a.validator != nil {
+		return a.validator.ValidateFilter(filter)
 	}
-	return q
+
+	// Basic validation if no validator is set
+	if !filter.Operator.IsValid() {
+		return NewInvalidOperatorError(string(filter.Operator))
+	}
+
+	return nil
 }
 
-func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts []string) *bun.SelectQuery {
+func (a *Applier) ApplyFilters(q *bun.SelectQuery, filters []Filter) (*Result, error) {
+	result := NewResult(q)
+
+	for _, filter := range filters {
+		if err := a.validateFilter(filter); err != nil {
+			result.AddError(err)
+			continue
+		}
+
+		if a.validator != nil && !a.validator.IsFilterAllowed(filter) {
+			result.AddError((NewFieldNotAllowedError(filter.Field, a.validator.allowedFields)))
+			continue
+		}
+
+		newQuery, err := a.applyFilter(result.Query, filter)
+		if err != nil {
+			result.AddError(err)
+			continue
+		}
+		result.Query = newQuery
+	}
+
+	if result.HasErrors() {
+		return result, result.Errors
+	}
+	return result, nil
+}
+
+func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts []string) (*bun.SelectQuery, []*FilterError) {
+	var errors []*FilterError
+
 	if sortParam == "" {
-		return q
+		return q, nil
 	}
 
 	for s := range strings.SplitSeq(sortParam, ",") {
@@ -47,6 +80,7 @@ func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts [
 		}
 
 		if allowedSorts != nil && !slices.Contains(allowedSorts, sortField) {
+			errors = append(errors, NewSortFieldNotAllowedError(sortField, allowedSorts))
 			continue
 		}
 
@@ -56,10 +90,11 @@ func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts [
 			q = q.Order(sortField + " ASC")
 		}
 	}
-	return q
+
+	return q, errors
 }
 
-func (a *Applier) applyFilter(q *bun.SelectQuery, filter Filter) *bun.SelectQuery {
+func (a *Applier) applyFilter(q *bun.SelectQuery, filter Filter) (*bun.SelectQuery, *FilterError) {
 	field := filter.Field
 	value := filter.Value
 
@@ -96,17 +131,21 @@ func (a *Applier) applyFilter(q *bun.SelectQuery, filter Filter) *bun.SelectQuer
 		q = q.Where("? IS NOT NULL", bun.Ident(field))
 	case Between:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
-		if len(values) == 2 {
-			q = q.Where("? BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
+		if len(values) != 2 {
+			return q, NewInvalidBetweenValueError(field, fmt.Sprintf("%v", value))
 		}
+		q = q.Where("? BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
 	case NotBetween:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
-		if len(values) == 2 {
-			q = q.Where("? NOT BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
+		if len(values) != 2 {
+			return q, NewValidationError(field, string(NotBetween), fmt.Sprintf("%v", value), "Not between operator requires exactly two comma-separated values", "Use format: 'value1,value2' (e.g., '10,20')")
 		}
+		q = q.Where("? NOT BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
+	default:
+		return q, NewInvalidOperatorError(string(filter.Operator))
 	}
 
-	return q
+	return q, nil
 }
 
 func parseCommaSeparatedValues(value string) []string {
@@ -124,13 +163,13 @@ func parseCommaSeparatedValues(value string) []string {
 	return result
 }
 
-func SplitSeq(s, sep string) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		parts := strings.Split(s, sep)
-		for _, part := range parts {
-			if !yield(part) {
-				return
-			}
-		}
-	}
-}
+// func SplitSeq(s, sep string) func(func(string) bool) {
+// 	return func(yield func(string) bool) {
+// 		parts := strings.Split(s, sep)
+// 		for _, part := range parts {
+// 			if !yield(part) {
+// 				return
+// 			}
+// 		}
+// 	}
+// }
