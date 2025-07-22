@@ -63,10 +63,21 @@ func TestParser_Parse(t *testing.T) {
 				t.Fatalf("Expected %d filters, got %d", len(tt.expected), len(filters))
 			}
 
-			for i, expected := range tt.expected {
-				if !reflect.DeepEqual(filters[i], expected) {
-					t.Errorf("Filter[%d] = %+v, want %+v", i, filters[i], expected)
-				}
+			// Convert to maps for order-independent comparison
+			expectedMap := make(map[string]filter.Filter)
+			for _, f := range tt.expected {
+				key := f.Field + ":" + string(f.Operator)
+				expectedMap[key] = f
+			}
+
+			actualMap := make(map[string]filter.Filter)
+			for _, f := range filters {
+				key := f.Field + ":" + string(f.Operator)
+				actualMap[key] = f
+			}
+
+			if !reflect.DeepEqual(actualMap, expectedMap) {
+				t.Errorf("Filters mismatch.\nExpected: %+v\nActual: %+v", tt.expected, filters)
 			}
 		})
 	}
