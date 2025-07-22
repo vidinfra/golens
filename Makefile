@@ -20,10 +20,9 @@ lint:
 	golangci-lint run
 
 fieldalignment:
-	@echo "Checking field alignment optimizations..."
-	@fieldalignment ./filter/...
-	@echo "✅ Field alignment check completed (optimization suggestions noted)"
-
+	@echo "Checking and fixing field alignment optimizations..."
+	@fieldalignment -fix ./...
+	@echo "✅ Field alignment fix completed"
 build:
 	go build ./...
 

@@ -80,11 +80,11 @@ func TestBuilder_New(t *testing.T) {
 
 func TestBuilder_AllowFields(t *testing.T) {
 	tests := []struct {
-		expectError   bool     // 1 byte
-		name          string   // 16 bytes
-		queryParams   string   // 16 bytes
-		errorField    string   // 16 bytes
-		allowedFields []string // 24 bytes (slice header)
+		name          string
+		queryParams   string
+		errorField    string
+		allowedFields []string
+		expectError   bool
 	}{
 		{
 			name:          "allowed field passes",
@@ -263,11 +263,11 @@ func TestBuilder_AllowAll(t *testing.T) {
 
 func TestBuilder_AllowConfigs(t *testing.T) {
 	tests := []struct {
-		expectError bool                  // 1 byte
-		name        string                // 16 bytes
-		queryParams string                // 16 bytes
-		description string                // 16 bytes
-		configs     []filter.FilterConfig // 24 bytes (slice header)
+		name        string
+		queryParams string
+		description string
+		configs     []filter.FilterConfig
+		expectError bool
 	}{
 		{
 			name:        "allowed operator for field",

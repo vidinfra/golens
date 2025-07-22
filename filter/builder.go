@@ -7,16 +7,16 @@ import (
 
 // Builder holds filter configuration and provides fluent API
 type Builder struct {
-	ctx           *gin.Context     // 8 bytes (pointer)
-	query         *bun.SelectQuery // 8 bytes (pointer)
-	parser        *Parser          // 8 bytes (pointer)
-	validator     *Validator       // 8 bytes (pointer)
-	applier       *Applier         // 8 bytes (pointer)
-	result        *Result          // 8 bytes (pointer)
-	allowedFields []string         // 24 bytes (slice header: ptr+len+cap)
-	allowedSorts  []string         // 24 bytes (slice header: ptr+len+cap)
-	configs       []FilterConfig   // 24 bytes (slice header: ptr+len+cap)
-	useConfigs    bool             // 1 byte
+	ctx           *gin.Context
+	query         *bun.SelectQuery
+	parser        *Parser
+	validator     *Validator
+	applier       *Applier
+	result        *Result
+	allowedFields []string
+	allowedSorts  []string
+	configs       []FilterConfig
+	useConfigs    bool
 }
 
 func New(c *gin.Context, q *bun.SelectQuery) *Builder {
