@@ -9,17 +9,17 @@ import (
 )
 
 type TestUser struct {
-	ID   int    `bun:"id,pk"`
-	Name string `bun:"name"`
+	Name string `bun:"name"`  // 16 bytes
+	ID   int    `bun:"id,pk"` // 8 bytes
 }
 
 func TestDatabaseDetection(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupDB        func() *bun.DB
-		expectedDriver string
-		shouldWork     bool
-		skipReason     string
+		setupDB        func() *bun.DB // 8 bytes (function pointer)
+		name           string         // 16 bytes
+		expectedDriver string         // 16 bytes
+		skipReason     string         // 16 bytes
+		shouldWork     bool           // 1 byte
 	}{
 		{
 			name: "PostgreSQL detection",

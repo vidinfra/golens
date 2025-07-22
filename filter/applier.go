@@ -177,7 +177,9 @@ func detectDatabaseDriver(q *bun.SelectQuery) DatabaseDriver {
 		return Unknown
 	}
 
-	defer func() { recover() }() // Just in case
+	defer func() {
+		_ = recover() // Intentionally ignore panic recovery result
+	}()
 
 	switch q.Dialect().Name().String() {
 	case "pg":

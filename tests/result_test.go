@@ -210,83 +210,83 @@ func TestResult_ErrorCount(t *testing.T) {
 
 func TestFilterError_Fields(t *testing.T) {
 	tests := []struct {
+		name     string              // 16 bytes (string)
 		error    *filter.FilterError // 8 bytes (pointer)
 		expected struct {
-			Suggestions []string         // 24 bytes (slice header)
+			HTTPStatus  int              // 8 bytes (int)
 			Type        filter.ErrorType // 16 bytes (string)
 			Message     string           // 16 bytes (string)
 			Field       string           // 16 bytes (string)
 			Operator    string           // 16 bytes (string)
 			Code        string           // 16 bytes (string)
-			HTTPStatus  int              // 8 bytes (int)
+			Suggestions []string         // 24 bytes (slice header)
 		}
-		name string // 16 bytes (string)
 	}{
 		{
 			name:  "field not allowed error",
 			error: filter.NewFieldNotAllowedError("email", []string{"name", "age"}),
 			expected: struct {
-				Suggestions []string         // 24 bytes (slice header)
+				HTTPStatus  int              // 8 bytes (int)
 				Type        filter.ErrorType // 16 bytes (string)
 				Message     string           // 16 bytes (string)
 				Field       string           // 16 bytes (string)
 				Operator    string           // 16 bytes (string)
 				Code        string           // 16 bytes (string)
-				HTTPStatus  int              // 8 bytes (int)
+				Suggestions []string         // 24 bytes (slice header)
 			}{
-				Suggestions: []string{"name", "age"},
+				HTTPStatus:  400,
 				Type:        filter.ErrorTypeValidation,
 				Message:     "Field 'email' is not allowed for filtering",
 				Field:       "email",
 				Operator:    "",
 				Code:        "FILTER_VALIDATION_ERROR",
-				HTTPStatus:  400,
+				Suggestions: []string{"name", "age"},
 			},
 		},
 		{
 			name:  "invalid operator error",
 			error: filter.NewInvalidOperatorError("xyz"),
 			expected: struct {
-				Suggestions []string         // 24 bytes (slice header)
+				HTTPStatus  int              // 8 bytes (int)
 				Type        filter.ErrorType // 16 bytes (string)
 				Message     string           // 16 bytes (string)
 				Field       string           // 16 bytes (string)
 				Operator    string           // 16 bytes (string)
 				Code        string           // 16 bytes (string)
-				HTTPStatus  int              // 8 bytes (int)
+				Suggestions []string         // 24 bytes (slice header)
 			}{
-				Suggestions: []string{
-					"eq", "ne", "like", "not-like", "starts-with", "ends-with",
-					"gt", "gte", "lt", "lte", "in", "not-in", "null", "not-null",
-					"between", "not-between",
-				},
+				HTTPStatus: 400,
 				Type:       filter.ErrorTypeValidation,
 				Message:    "Invalid operator 'xyz'",
 				Field:      "",
 				Operator:   "xyz",
 				Code:       "FILTER_VALIDATION_ERROR",
-				HTTPStatus: 400,
+				Suggestions: []string{
+					"eq", "ne", "like", "not-like", "starts-with", "ends-with",
+					"gt", "gte", "lt", "lte", "in", "not-in", "null", "not-null",
+					"between", "not-between",
+				},
 			},
 		},
 		{
 			name:  "missing value error",
 			error: filter.NewMissingValueError("status", "eq"),
 			expected: struct {
-				Suggestions []string         // 24 bytes (slice header)
+				HTTPStatus  int              // 8 bytes (int)
 				Type        filter.ErrorType // 16 bytes (string)
 				Message     string           // 16 bytes (string)
 				Field       string           // 16 bytes (string)
 				Operator    string           // 16 bytes (string)
 				Code        string           // 16 bytes (string)
-				HTTPStatus  int              // 8 bytes (int)
+				Suggestions []string         // 24 bytes (slice header)
 			}{
-				Suggestions: []string{"Provide a non-empty value for the filter"},
+				HTTPStatus:  400,
 				Type:        filter.ErrorTypeValidation,
 				Message:     "Filter value cannot be empty",
 				Field:       "status",
 				Operator:    "eq",
 				Code:        "FILTER_VALIDATION_ERROR",
-				HTTPStatus:  400,
+				Suggestions: []string{"Provide a non-empty value for the filter"},
 			},
 		},
 	}

@@ -12,9 +12,9 @@ import (
 )
 
 type User struct {
-	ID    int    `bun:"id,pk"`
 	Name  string `bun:"name"`
 	Email string `bun:"email"`
+	ID    int    `bun:"id,pk"`
 	Age   int    `bun:"age"`
 }
 
@@ -36,9 +36,9 @@ func createTestQuery() *bun.SelectQuery {
 
 func TestBuilder_New(t *testing.T) {
 	tests := []struct {
-		name        string
 		setupCtx    func() *gin.Context
 		setupQuery  func() *bun.SelectQuery
+		name        string
 		shouldPanic bool
 	}{
 		{
@@ -80,11 +80,11 @@ func TestBuilder_New(t *testing.T) {
 
 func TestBuilder_AllowFields(t *testing.T) {
 	tests := []struct {
-		name          string
-		queryParams   string
-		allowedFields []string
-		expectError   bool
-		errorField    string
+		expectError   bool     // 1 byte
+		name          string   // 16 bytes
+		queryParams   string   // 16 bytes
+		errorField    string   // 16 bytes
+		allowedFields []string // 24 bytes (slice header)
 	}{
 		{
 			name:          "allowed field passes",
@@ -263,11 +263,11 @@ func TestBuilder_AllowAll(t *testing.T) {
 
 func TestBuilder_AllowConfigs(t *testing.T) {
 	tests := []struct {
-		name        string
-		queryParams string
-		configs     []filter.FilterConfig
-		expectError bool
-		description string
+		expectError bool                  // 1 byte
+		name        string                // 16 bytes
+		queryParams string                // 16 bytes
+		description string                // 16 bytes
+		configs     []filter.FilterConfig // 24 bytes (slice header)
 	}{
 		{
 			name:        "allowed operator for field",
@@ -325,10 +325,10 @@ func TestBuilder_AllowConfigs(t *testing.T) {
 
 func TestBuilder_MethodChaining(t *testing.T) {
 	tests := []struct {
-		name        string
-		queryParams string
-		setupChain  func(*filter.Builder) *filter.Builder
-		expectError bool
+		setupChain  func(*filter.Builder) *filter.Builder // 8 bytes (function pointer)
+		name        string                                // 16 bytes
+		queryParams string                                // 16 bytes
+		expectError bool                                  // 1 byte
 	}{
 		{
 			name:        "chained AllowFields and Apply",
@@ -387,12 +387,12 @@ func TestBuilder_MethodChaining(t *testing.T) {
 
 func TestBuilder_ComplexQueries(t *testing.T) {
 	tests := []struct {
-		name            string
-		queryParams     string
-		setupBuilder    func(*filter.Builder) *filter.Builder
-		expectError     bool
-		expectedFilters int
-		description     string
+		setupBuilder    func(*filter.Builder) *filter.Builder // 8 bytes (function pointer)
+		name            string                                // 16 bytes
+		queryParams     string                                // 16 bytes
+		description     string                                // 16 bytes
+		expectedFilters int                                   // 8 bytes
+		expectError     bool                                  // 1 byte
 	}{
 		{
 			name:        "multiple filters with different operators",
@@ -476,11 +476,11 @@ func TestBuilder_ComplexQueries(t *testing.T) {
 
 func TestBuilder_ErrorHandling(t *testing.T) {
 	tests := []struct {
-		name         string
-		queryParams  string
-		setupBuilder func(*filter.Builder) *filter.Builder
-		expectError  bool
-		errorType    string
+		setupBuilder func(*filter.Builder) *filter.Builder // 8 bytes (function pointer)
+		name         string                                // 16 bytes
+		queryParams  string                                // 16 bytes
+		errorType    string                                // 16 bytes
+		expectError  bool                                  // 1 byte
 	}{
 		{
 			name:        "invalid operator",

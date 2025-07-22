@@ -16,15 +16,19 @@ const (
 )
 
 type FilterError struct {
-	InternalErr error     `json:"-"`                     // 16 bytes (interface: type+data pointers)
-	Suggestions []string  `json:"suggestions,omitempty"` // 24 bytes (slice header)
-	Type        ErrorType `json:"type"`                  // 16 bytes (string: ptr+len)
-	Message     string    `json:"message"`               // 16 bytes (string: ptr+len)
-	Field       string    `json:"field,omitempty"`       // 16 bytes (string: ptr+len)
-	Operator    string    `json:"operator,omitempty"`    // 16 bytes (string: ptr+len)
-	Value       string    `json:"value,omitempty"`       // 16 bytes (string: ptr+len)
-	Code        string    `json:"code"`                  // 16 bytes (string: ptr+len)
-	HTTPStatus  int       `json:"-"`                     // 8 bytes (int)
+	// Group interface first (16 bytes, pointer-aligned)
+	InternalErr error `json:"-"` // 16 bytes (interface: type+data pointers)
+	// Group strings together (16 bytes each, pointer-aligned)
+	Type     ErrorType `json:"type"`               // 16 bytes (string: ptr+len)
+	Message  string    `json:"message"`            // 16 bytes (string: ptr+len)
+	Field    string    `json:"field,omitempty"`    // 16 bytes (string: ptr+len)
+	Operator string    `json:"operator,omitempty"` // 16 bytes (string: ptr+len)
+	Value    string    `json:"value,omitempty"`    // 16 bytes (string: ptr+len)
+	Code     string    `json:"code"`               // 16 bytes (string: ptr+len)
+	// Slice at end (24 bytes, but ends with alignment padding)
+	Suggestions []string `json:"suggestions,omitempty"` // 24 bytes (slice header with ptr)
+	// Small int last (8 bytes)
+	HTTPStatus int `json:"-"` // 8 bytes (int)
 }
 
 // Converts the error to a readable string for logging/debugging
