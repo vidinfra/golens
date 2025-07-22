@@ -103,13 +103,13 @@ func (a *Applier) applyFilter(q *bun.SelectQuery, filter Filter) (*bun.SelectQue
 	case NotEquals:
 		q = q.Where("? != ?", bun.Ident(field), value)
 	case Contains:
-		q = q.Where("? ILIKE ?", bun.Ident(field), "%"+fmt.Sprintf("%v", value)+"%")
+		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value)+"%", false)
 	case NotContains:
-		q = q.Where("? NOT ILIKE ?", bun.Ident(field), "%"+fmt.Sprintf("%v", value)+"%")
+		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value)+"%", true)
 	case StartsWith:
-		q = q.Where("? ILIKE ?", bun.Ident(field), fmt.Sprintf("%v", value)+"%")
+		q = a.applyCaseInsensitiveLike(q, field, fmt.Sprintf("%v", value)+"%", false)
 	case EndsWith:
-		q = q.Where("? ILIKE ?", bun.Ident(field), "%"+fmt.Sprintf("%v", value))
+		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value), false)
 	case GreaterThan:
 		q = q.Where("? > ?", bun.Ident(field), value)
 	case GreaterThanOrEq:
@@ -162,13 +162,56 @@ func parseCommaSeparatedValues(value string) []string {
 	return result
 }
 
-// func SplitSeq(s, sep string) func(func(string) bool) {
-// 	return func(yield func(string) bool) {
-// 		parts := strings.Split(s, sep)
-// 		for _, part := range parts {
-// 			if !yield(part) {
-// 				return
-// 			}
-// 		}
-// 	}
-// }
+// DatabaseDriver represents supported database drivers
+type DatabaseDriver string
+
+const (
+	PostgreSQL DatabaseDriver = "postgresql"
+	MySQL      DatabaseDriver = "mysql"
+	SQLite     DatabaseDriver = "sqlite"
+	Unknown    DatabaseDriver = "unknown"
+)
+
+func detectDatabaseDriver(q *bun.SelectQuery) DatabaseDriver {
+	if q == nil {
+		return Unknown
+	}
+
+	defer func() { recover() }() // Just in case
+
+	switch q.Dialect().Name().String() {
+	case "pg":
+		return PostgreSQL
+	case "mysql":
+		return MySQL
+	case "sqlite":
+		return SQLite
+	default:
+		return Unknown
+	}
+}
+
+func (a *Applier) applyCaseInsensitiveLike(q *bun.SelectQuery, field, pattern string, negate bool) *bun.SelectQuery {
+	switch detectDatabaseDriver(q) {
+	case PostgreSQL:
+		if negate {
+			return q.Where("? NOT ILIKE ?", bun.Ident(field), pattern)
+		}
+		return q.Where("? ILIKE ?", bun.Ident(field), pattern)
+	case MySQL:
+		if negate {
+			return q.Where("? NOT LIKE ? COLLATE utf8mb4_general_ci", bun.Ident(field), pattern)
+		}
+		return q.Where("? LIKE ? COLLATE utf8mb4_general_ci", bun.Ident(field), pattern)
+	case SQLite:
+		if negate {
+			return q.Where("? NOT LIKE ?", bun.Ident(field), pattern)
+		}
+		return q.Where("? LIKE ?", bun.Ident(field), pattern)
+	default:
+		if negate {
+			return q.Where("LOWER(?) NOT LIKE LOWER(?)", bun.Ident(field), pattern)
+		}
+		return q.Where("LOWER(?) LIKE LOWER(?)", bun.Ident(field), pattern)
+	}
+}
