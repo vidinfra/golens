@@ -1,17 +1,18 @@
 # Go Filter Library
 
-A flexible and powerful filtering library for Go applications, designed for seamless integration with popular frameworks like Gin and ORMs like Bun.
+A flexible and powerful filtering library for Go applications, designed for
+seamless integration with frameworks like **Gin** and ORMs like **GORM**.
 
 ## Features
 
-- **JSON API Compliant**: Supports `filter[field][operator]=value` format
+- **JSON API Compliant**: Supports `filter[field][operator]=value`
 - **Simple Format Support**: Fallback to `filter[field]=value` (assumes equals)
-- **Multiple Operators**: Comprehensive set of filter operators (eq, like, gt, in, between, etc.)
+- **Rich Operators**: `eq`, `like`, `gt`, `in`, `between`, `null`, etc.
 - **Field Validation**: Configure which fields can be filtered and sorted
-- **Operator Control**: Specify allowed operators per field
-- **Sorting Support**: Built-in sorting with field validation
+- **Operator Control**: Per-field operator allowlists
+- **Sorting Support**: Built-in, with allowlist validation
 - **Fluent API**: Chain methods for clean, readable code
-- **Type Safe**: Full Go type safety with structured error handling
+- **Struct-First Error Handling**: Typed errors, no panics, JSON helpers for responses
 
 ## Installation
 
@@ -25,91 +26,75 @@ go get github.com/vidinfra/golens
 package main
 
 import (
-    "log"
     "net/http"
-    
     "github.com/gin-gonic/gin"
-    "github.com/uptrace/bun"
+    "gorm.io/driver/sqlite"
+    "gorm.io/gorm"
+
     "github.com/vidinfra/golens/filter"
 )
 
+type User struct {
+    ID     int    `json:"id" gorm:"primaryKey;autoIncrement"`
+    Name   string `json:"name"`
+    Email  string `json:"email"`
+    Status string `json:"status"`
+    Age    int    `json:"age"`
+}
+
 func main() {
+    db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+    db.AutoMigrate(&User{})
+
     r := gin.Default()
-    
     r.GET("/users", func(c *gin.Context) {
-        query := db.NewSelect().Model((*User)(nil))
-        
-        // Apply filters and sorting with validation
-        result := filter.New(c, query).
-            AllowFields("name", "email", "age").
-            AllowSorts("name", "created_at").
-            Apply().
-            ApplySort()
-        
-        // Handle validation errors
-        if result.HasErrors() {
-            c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
+        base := db.Model(&User{})
+
+        builder := filter.New(c, base).
+            AllowFields("name", "email", "age", "status").
+            AllowSorts("name", "age").
+            Apply()
+
+        res := builder.Result()
+
+        if !res.OK() {
+            c.JSON(http.StatusBadRequest, res.ToJSONResponse())
             return
         }
-        
-        // Execute the validated query
-        finalQuery := result.Query()
+
         var users []User
-        err := finalQuery.Scan(c.Request.Context(), &users)
-        if err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+        if err := res.Query.Find(&users).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"success": false,
+            "message": "query failed"})
             return
         }
-        
-        c.JSON(http.StatusOK, users)
+
+        c.JSON(http.StatusOK, gin.H{"success": true, "data": users})
     })
-    
-    r.Run()
+
+    r.Run(":8080")
 }
 ```
 
 ## Error Handling
 
-The library provides structured error reporting for validation failures.
+Errors are returned as **structs**, with optional JSON helpers.
 
-### Basic Error Handling
-
-```go
-result := filter.New(c, query).
-    AllowFields("name", "email").
-    Apply()
-
-// Check for validation errors
-if result.HasErrors() {
-    // Use built-in JSON response
-    c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
-    return
-}
-```
-
-### Custom Error Handling
+### Struct-First
 
 ```go
-if result.HasErrors() {
-    errors := result.GetErrors()
-    
-    // Access error details for custom handling
-    for _, err := range errors.Errors {
+res := builder.Result()
+
+if !res.OK() {
+    for _, err := range res.Errors.Errors {
         log.Printf("Validation error: %s (Field: %s)", err.Message, err.Field)
     }
-    
-    // Build custom response
-    c.JSON(http.StatusBadRequest, gin.H{
-        "error": "Invalid filters provided",
-        "details": errors.Errors[0].Message,
-    })
+    c.JSON(http.StatusBadRequest, res.ToJSONResponse())
     return
 }
 ```
 
-### Error Response Format
-
-Standard JSON error response format:
+### JSON Error Response Format
 
 ```json
 {
@@ -117,7 +102,7 @@ Standard JSON error response format:
   "errors": [
     {
       "type": "validation_error",
-      "code": "FILTER_VALIDATION_ERROR", 
+      "code": "FIELD_NOT_ALLOWED",
       "field": "email",
       "message": "Field 'email' is not allowed for filtering",
       "suggestions": ["name", "age"]
@@ -130,7 +115,7 @@ Standard JSON error response format:
 
 ### JSON API Format
 ```
-GET /users?filter[name][eq]=john&filter[age][gte]=25&sort=name,-created_at
+GET /users?filter[name][eq]=john&filter[age][gte]=25&sort=-age
 ```
 
 ### Simple Format
@@ -138,164 +123,70 @@ GET /users?filter[name][eq]=john&filter[age][gte]=25&sort=name,-created_at
 GET /users?filter[status]=active&filter[name]=john
 ```
 
-### Advanced Filtering
+### Advanced
 ```
 GET /products?filter[price][between]=10,100&filter[category][in]=electronics,books
 ```
 
-## Filter Operators
+## Supported Operators
 
-- `eq` - Equals
-- `ne` - Not equals  
-- `like` - Contains (case insensitive)
-- `not-like` - Does not contain
-- `starts-with` - Starts with
-- `ends-with` - Ends with
-- `gt` - Greater than
-- `gte` - Greater than or equal
-- `lt` - Less than
-- `lte` - Less than or equal
-- `in` - In list (comma-separated)
-- `not-in` - Not in list
-- `null` - Is null
-- `not-null` - Is not null
-- `between` - Between two values (comma-separated)
-- `not-between` - Not between two values
+- `eq`, `ne`
+- `like`, `not-like`
+- `starts-with`, `ends-with`
+- `gt`, `gte`, `lt`, `lte`
+- `in`, `not-in`
+- `null`, `not-null`
+- `between`, `not-between`
 
 ## API Reference
 
-### Builder Methods
+### Builder
 
-- `AllowFields(fields ...string)`: Set allowed fields for filtering
-- `AllowSorts(fields ...string)`: Set allowed fields for sorting  
-- `AllowAll(fields ...string)`: Set same fields for both filtering and sorting
-- `AllowConfigs(configs ...FilterConfig)`: Use detailed field configurations
-- `Apply()`: Parse and apply filters (returns Builder for chaining)
-- `ApplySort()`: Apply sorting (returns Builder for chaining)
+- `AllowFields(fields ...string)`
+- `AllowSorts(fields ...string)`
+- `AllowAll(fields ...string)`
+- `AllowConfigs(configs ...FilterConfig)`
+- `Apply()` → parses + applies filters & sort
 
-### Result Methods
+### Result
 
-- `HasErrors() bool`: Check if any validation errors occurred
-- `GetErrors() *FilterErrors`: Get detailed error information
-- `Query()`: Get the final validated Bun query
-- `Result().ToJSONResponse()`: Convert to standard JSON error format
-
-## Advanced Configuration
-
-### Field-Specific Operator Control
-
-```go
-configs := []filter.FilterConfig{
-    filter.AllowedFilter("name", filter.Equals, filter.Contains, filter.StartsWith),
-    filter.AllowedFilter("price", filter.GreaterThan, filter.LessThan, filter.Between),
-    filter.AllowedFilter("category", filter.Equals, filter.In),
-}
-
-result := filter.New(c, query).
-    AllowConfigs(configs...).
-    Apply()
-
-if result.HasErrors() {
-    c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
-    return
-}
-
-finalQuery := result.Query()
-```
-
-### Production Example
-
-```go
-func handleFilters(c *gin.Context, query *bun.SelectQuery) (*bun.SelectQuery, error) {
-    result := filter.New(c, query).
-        AllowFields("name", "email", "age", "status").
-        AllowSorts("name", "created_at", "updated_at").
-        Apply().
-        ApplySort()
-    
-    if result.HasErrors() {
-        errors := result.GetErrors()
-        
-        // Log errors for debugging
-        for _, err := range errors.Errors {
-            log.Printf("Filter validation error: %s (Field: %s)", err.Message, err.Field)
-        }
-        
-        c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
-        return nil, fmt.Errorf("filter validation failed")
-    }
-    
-    return result.Query(), nil
-}
-```
-
-## Examples
-
-The `/examples` directory contains comprehensive usage examples:
-
-- **`examples/basic/`**: Basic filtering and sorting
-- **`examples/custom-error-handling/`**: Advanced error handling patterns
-- **`examples/gin-integration/`**: Production-ready Gin + Bun ORM integration
-
-### Running Examples
-
-```bash
-cd examples/basic && go run main.go
-cd examples/custom-error-handling && go run main.go  
-cd examples/gin-integration && go run main.go
-```
-
-## Testing
-
-```bash
-# Run all tests
-make test
-
-# Run with race detection  
-make test-race
-
-# Generate coverage report
-make test-cover
-```
-
-## Development
-
-```bash
-# Install development tools
-make install-tools
-
-# Run linting and formatting
-make dev
-
-# Run all checks before release
-make release
-```
+- `OK() bool` → true if no errors
+- `Errors *FilterErrors` → structured errors
+- `Query *gorm.DB` → final validated query
+- `ToJSONResponse()` → standard JSON format
 
 ## Migration Guide
 
-### From v1.x to v2.x
+### From v1.x (Bun, panic-based) to v2.x (GORM, struct-first)
 
-**v1.x (panic-based):**
+**v1.x**
 ```go
 query := filter.New(c, query).
     AllowFields("name").
     Apply().
-    Query() // Could panic on validation errors
+    Query() // could panic
 ```
 
-**v2.x (error handling):**
+**v2.x**
 ```go
-result := filter.New(c, query).
+builder := filter.New(c, db.Model(&User{})).
     AllowFields("name").
     Apply()
 
-if result.HasErrors() {
-    c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
+res := builder.Result()
+if !res.OK() {
+    c.JSON(http.StatusBadRequest, res.ToJSONResponse())
     return
 }
-
-query := result.Query() // Safe
+query := res.Query
 ```
+
+## Examples
+
+See `/examples`:
+- `basic/` → simple filtering & sorting
+- `gin/` → Gin + GORM integration
+- `custom-error/` → advanced error handling
 
 ## License
 
