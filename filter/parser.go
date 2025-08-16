@@ -52,11 +52,6 @@ func (p *Parser) Parse() *ParseResult {
 			continue
 		}
 		val := strings.TrimSpace(values[0])
-		if val == "" {
-			// Leave empty handling to validator (so it can give operator-specific messages)
-			// but we still emit a parsing error if the key itself is malformed.
-			// For a well-formed key, empty value isn't a parsing error.
-		}
 
 		// Fast path: reject keys that don't end with ']'
 		if !strings.HasSuffix(key, prefixClose) {
