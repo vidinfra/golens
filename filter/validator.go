@@ -2,104 +2,162 @@ package filter
 
 import (
 	"fmt"
-	"slices"
+	"strings"
 )
 
-// Validator handles validation of filters against configurations
+// Validator enforces which fields/operators are allowed and validates value shapes.
 type Validator struct {
+	fieldSet      map[string]struct{}
+	opsPerField   map[string]map[Clause]struct{}
 	allowedFields []string
 	configs       []FilterConfig
-	useConfigs    bool
 }
 
 func NewValidator(allowedFields []string, configs []FilterConfig) *Validator {
-	return &Validator{
+	v := &Validator{
 		allowedFields: allowedFields,
 		configs:       configs,
-		useConfigs:    len(configs) > 0,
+		fieldSet:      map[string]struct{}{},
+		opsPerField:   map[string]map[Clause]struct{}{},
 	}
+
+	// If configs are provided, they define both allowed fields and allowed operators.
+	if len(configs) > 0 {
+		for _, c := range configs {
+			// allowed field
+			v.fieldSet[c.Field] = struct{}{}
+
+			// per-field operator allowlist (if provided)
+			if len(c.AllowedOperators) > 0 {
+				opset := make(map[Clause]struct{}, len(c.AllowedOperators))
+				for _, op := range c.AllowedOperators {
+					opset[op] = struct{}{}
+				}
+				v.opsPerField[c.Field] = opset
+			}
+		}
+		return v
+	}
+
+	// Else, fall back to a simple field allowlist.
+	for _, f := range allowedFields {
+		v.fieldSet[f] = struct{}{}
+	}
+	return v
 }
 
-func (v *Validator) IsFilterAllowed(filter Filter) bool {
-	if v.useConfigs {
-		return v.isFilterAllowedByConfig(filter)
-	} else if v.allowedFields != nil {
-		return slices.Contains(v.allowedFields, filter.Field)
+// IsFilterAllowed returns whether a filter's FIELD is allowed.
+// - If configs are present: only fields present in configs are allowed.
+// - Else if allowedFields provided: must be in that list.
+// - Else: allow any field (no restriction).
+func (v *Validator) IsFilterAllowed(f Filter) bool {
+	if len(v.configs) > 0 {
+		_, ok := v.fieldSet[f.Field]
+		return ok
 	}
+	if len(v.allowedFields) > 0 {
+		_, ok := v.fieldSet[f.Field]
+		return ok
+	}
+	// No allowlists configured → allow all fields
 	return true
 }
 
-func (v *Validator) isFilterAllowedByConfig(filter Filter) bool {
-	if v.configs == nil {
-		return true
-	}
-
-	for _, config := range v.configs {
-		if config.Field == filter.Field {
-			return slices.Contains(config.AllowedOperators, filter.Operator)
-		}
-	}
-
-	return false
-}
-
+// GetAllowedFields returns the effective allowed fields.
 func (v *Validator) GetAllowedFields() []string {
-	if v.useConfigs && len(v.configs) > 0 {
-		fields := make([]string, len(v.configs))
-		for i, config := range v.configs {
-			fields[i] = config.Field
+	if len(v.configs) > 0 {
+		fields := make([]string, 0, len(v.fieldSet))
+		for field := range v.fieldSet {
+			fields = append(fields, field)
 		}
 		return fields
 	}
-
 	return v.allowedFields
 }
 
-func (v *Validator) ValidateFilter(filter Filter) *FilterError {
-	if !filter.Operator.IsValid() {
-		return NewInvalidOperatorError(string(filter.Operator))
+// ValidateFilter performs full validation of a single filter:
+// 1) field is allowed
+// 2) operator is valid and allowed for that field (when configs provided)
+// 3) value is present/has the right shape for the operator
+func (v *Validator) ValidateFilter(f Filter) *FilterError {
+	// Operator must be defined/known
+	if !f.Operator.IsValid() {
+		return NewInvalidOperatorError(string(f.Operator))
 	}
 
-	if filter.Field == "" {
-		return NewValidationError("", string(filter.Operator), fmt.Sprintf("%v", filter.Value), "Field name cannot be empty")
+	// Field must be non-empty
+	if strings.TrimSpace(f.Field) == "" {
+		return NewValidationError("", string(f.Operator), fmt.Sprintf("%v", f.Value), "Field name cannot be empty")
 	}
 
-	// Check if value is empty for operators that require it
-	if filter.Value == "" || filter.Value == nil {
-		switch filter.Operator {
-		case IsNull, IsNotNull:
-			// These operators don't need values
-		default:
-			return NewMissingValueError(filter.Field, string(filter.Operator))
+	// Field allow-check
+	if !v.IsFilterAllowed(f) {
+		if len(v.configs) > 0 {
+			allowed := v.GetAllowedFields()
+			// If field exists in configs but operator not allowed, return operator error below.
+			// Otherwise, field is not allowed at all:
+			return NewFieldNotAllowedError(f.Field, allowed)
 		}
+		return NewFieldNotAllowedError(f.Field, v.allowedFields)
 	}
 
-	switch filter.Operator {
-	case Between, NotBetween:
-		valueStr := fmt.Sprintf("%v", filter.Value)
-		values := parseCommaSeparatedValues(valueStr)
-		if len(values) != 2 {
-			return NewInvalidBetweenValueError(filter.Field, valueStr)
-		}
-	}
-
-	if !v.IsFilterAllowed(filter) {
-		if v.useConfigs {
-			for _, config := range v.configs {
-				if config.Field == filter.Field {
-					return NewOperatorNotAllowedError(filter.Field, string(filter.Operator), config.AllowedOperators)
+	// Operator allow-check (only enforced when configs define per-field ops)
+	if len(v.configs) > 0 {
+		if ops, ok := v.opsPerField[f.Field]; ok && len(ops) > 0 {
+			if _, allowed := ops[f.Operator]; !allowed {
+				// build suggestions from configured operators
+				suggestions := make([]Clause, 0, len(ops))
+				for op := range ops {
+					suggestions = append(suggestions, op)
 				}
+				return NewOperatorNotAllowedError(f.Field, string(f.Operator), suggestions)
 			}
-
-			allowedFields := make([]string, len(v.configs))
-			for i, config := range v.configs {
-				allowedFields[i] = config.Field
-			}
-			return NewFieldNotAllowedError(filter.Field, allowedFields)
-		} else {
-			return NewFieldNotAllowedError(filter.Field, v.allowedFields)
 		}
+	}
+
+	// Value shape/semantics by operator
+	if err := v.validateValueByOperator(f); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func (v *Validator) validateValueByOperator(f Filter) *FilterError {
+	op := f.Operator
+	val := f.Value
+	raw := strings.TrimSpace(fmt.Sprint(val))
+
+	switch op {
+	case IsNull, IsNotNull:
+		// No value required/used
+		return nil
+
+	case Between, NotBetween:
+		if raw == "" {
+			return NewInvalidBetweenValueError(f.Field, raw)
+		}
+		parts := parseCommaSeparatedValues(raw)
+		if len(parts) != 2 {
+			return NewInvalidBetweenValueError(f.Field, raw)
+		}
+		return nil
+
+	case In, NotIn:
+		if raw == "" {
+			return NewMissingValueError(f.Field, string(op))
+		}
+		parts := parseCommaSeparatedValues(raw)
+		if len(parts) == 0 {
+			return NewMissingValueError(f.Field, string(op))
+		}
+		return nil
+
+	default:
+		// All other operators require a non-empty value.
+		if raw == "" {
+			return NewMissingValueError(f.Field, string(op))
+		}
+		return nil
+	}
 }

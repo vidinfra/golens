@@ -5,123 +5,106 @@ import (
 	"strings"
 )
 
-// Parser handles parsing of URL query parameters into filters
+// Parser handles parsing of URL query parameters into filters.
 type Parser struct {
 	queryValues url.Values
+	// Optional: key prefix, defaults to "filter"
+	prefix string
 }
 
-// ParseResult represents the result of parsing operations
+// ParseResult represents the result of parsing operations.
 type ParseResult struct {
-	Errors  *FilterErrors // 8 bytes (pointer)
-	Filters []Filter      // 24 bytes (slice header)
+	Errors  *FilterErrors
+	Filters []Filter
 }
 
 func NewParser(queryValues url.Values) *Parser {
 	return &Parser{
 		queryValues: queryValues,
+		prefix:      "filter",
 	}
 }
 
-// Parse extracts filters from query parameters with error handling
+// WithPrefix allows customizing the key prefix (default "filter").
+// Example: p.WithPrefix("q").Parse() will parse q[field] keys.
+func (p *Parser) WithPrefix(prefix string) *Parser {
+	if prefix != "" {
+		p.prefix = prefix
+	}
+	return p
+}
+
+// Parse extracts filters from query parameters with error handling.
+// Supports both:
+//  1. JSON:   filter[field][operator]=value
+//  2. Simple: filter[field]=value    (assumes Equals)
 func (p *Parser) Parse() *ParseResult {
-	result := &ParseResult{
-		Filters: []Filter{},
+	res := &ParseResult{
 		Errors:  &FilterErrors{},
+		Filters: make([]Filter, 0, len(p.queryValues)),
 	}
 
-	// Parse JSON API format: filter[field][operator]=value
-	jsonAPIFilters, jsonAPIErrors := p.parseJSONAPIFormat()
-	result.Filters = append(result.Filters, jsonAPIFilters...)
-	if len(jsonAPIErrors) > 0 {
-		result.Errors.Errors = append(result.Errors.Errors, jsonAPIErrors...)
-	}
-
-	// Fallback to simple format: filter[field]=value (assumes 'eq' operator)
-	simpleFilters, simpleErrors := p.parseSimpleFormat()
-	result.Filters = append(result.Filters, simpleFilters...)
-	if len(simpleErrors) > 0 {
-		result.Errors.Errors = append(result.Errors.Errors, simpleErrors...)
-	}
-
-	return result
-}
-
-func (p *Parser) parseJSONAPIFormat() ([]Filter, []*FilterError) {
-	var filters []Filter
-	var errors []*FilterError
+	prefixOpen := p.prefix + "["
+	prefixClose := "]"
 
 	for key, values := range p.queryValues {
-		if !strings.HasPrefix(key, "filter[") || len(values) == 0 {
+		if !strings.HasPrefix(key, prefixOpen) || len(values) == 0 {
+			continue
+		}
+		val := strings.TrimSpace(values[0])
+		if val == "" {
+			// Leave empty handling to validator (so it can give operator-specific messages)
+			// but we still emit a parsing error if the key itself is malformed.
+			// For a well-formed key, empty value isn't a parsing error.
+		}
+
+		// Fast path: reject keys that don't end with ']'
+		if !strings.HasSuffix(key, prefixClose) {
+			res.Errors.Add(NewInvalidFilterFormatError(key, val))
 			continue
 		}
 
-		if field, operator, ok := parseFilterKey(key); ok {
-			value := values[0]
+		inner := key[len(prefixOpen) : len(key)-len(prefixClose)] // content inside filter[...]
+		parts := strings.Split(inner, "][")
 
-			// Validate operator
-			clause := Clause(operator)
-			if !clause.IsValid() {
-				errors = append(errors, NewInvalidOperatorError(operator))
+		switch len(parts) {
+		case 1:
+			// Simple format: filter[field]=value
+			field := strings.TrimSpace(parts[0])
+			if field == "" {
+				res.Errors.Add(NewValidationError("", "", val, "Empty field name in filter"))
 				continue
 			}
+			res.Filters = append(res.Filters, Filter{
+				Field:    field,
+				Operator: Equals,
+				Value:    val,
+			})
 
-			filters = append(filters, Filter{
+		case 2:
+			// JSON API format: filter[field][operator]=value
+			field := strings.TrimSpace(parts[0])
+			opStr := strings.TrimSpace(parts[1])
+			if field == "" || opStr == "" {
+				res.Errors.Add(NewInvalidFilterFormatError(key, val))
+				continue
+			}
+			clause := Clause(opStr)
+			if !clause.IsValid() {
+				res.Errors.Add(NewInvalidOperatorError(opStr))
+				continue
+			}
+			res.Filters = append(res.Filters, Filter{
 				Field:    field,
 				Operator: clause,
-				Value:    value,
+				Value:    val,
 			})
-		} else {
-			errors = append(errors, NewInvalidFilterFormatError(key, values[0]))
+
+		default:
+			// Anything else is malformed: filter[field][op][extra]...
+			res.Errors.Add(NewInvalidFilterFormatError(key, val))
 		}
 	}
 
-	return filters, errors
-}
-
-func (p *Parser) parseSimpleFormat() ([]Filter, []*FilterError) {
-	var filters []Filter
-	var errors []*FilterError
-
-	for key, values := range p.queryValues {
-		if !strings.HasPrefix(key, "filter[") || !strings.HasSuffix(key, "]") || len(values) == 0 {
-			continue
-		}
-
-		// Skip if already handled by full format
-		if strings.Count(key, "][") > 0 {
-			continue
-		}
-
-		// Extract field name from filter[field]
-		field := key[7 : len(key)-1] // Remove "filter[" and "]"
-		if field == "" {
-			errors = append(errors, NewValidationError("", "", values[0], "Empty field name in filter"))
-			continue
-		}
-
-		value := values[0]
-
-		filters = append(filters, Filter{
-			Field:    field,
-			Operator: Equals,
-			Value:    value,
-		})
-	}
-
-	return filters, errors
-}
-
-// parseFilterKey extracts field and operator from filter[field][operator] format
-func parseFilterKey(key string) (field, operator string, ok bool) {
-	if !strings.HasPrefix(key, "filter[") || !strings.HasSuffix(key, "]") {
-		return "", "", false
-	}
-
-	inner := key[7 : len(key)-1]
-	parts := strings.Split(inner, "][")
-	if len(parts) != 2 {
-		return "", "", false
-	}
-
-	return parts[0], parts[1], true
+	return res
 }

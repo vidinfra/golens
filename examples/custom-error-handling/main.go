@@ -1,10 +1,3 @@
-// Custom Error Handling Example - Updated for Struct-First Approach
-//
-// This example shows advanced patterns:
-// 1. Error categorization by type and field
-// 2. Custom response formatting
-// 3. Field-specific logic (e.g., email permissions)
-// 4. Translation/internationalization ready patterns
 package main
 
 import (
@@ -13,34 +6,48 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uptrace/bun"
+	"gorm.io/gorm"
+
+	// Choose and initialize your DB driver:
+	// "gorm.io/driver/postgres"
+	// "gorm.io/driver/mysql"
+	// "gorm.io/driver/sqlite"
+
 	"github.com/vidinfra/golens/filter"
 )
 
 type User struct {
-	Name   string `json:"name" bun:"name"`
-	Email  string `json:"email" bun:"email"`
-	Status string `json:"status" bun:"status"`
-	ID     int    `json:"id" bun:"id,pk,autoincrement"`
-	Age    int    `json:"age" bun:"age"`
+	Name   string `json:"name"   gorm:"column:name"`
+	Email  string `json:"email"  gorm:"column:email"`
+	Status string `json:"status" gorm:"column:status"`
+	ID     int    `json:"id"     gorm:"column:id;primaryKey;autoIncrement"`
+	Age    int    `json:"age"    gorm:"column:age"`
 }
+
+// Optional if your table name isn't the pluralized default
+// func (User) TableName() string { return "users" }
 
 func main() {
 	r := gin.Default()
 
+	// TODO: initialize your *gorm.DB as `db` here.
+	// Example:
+	// db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	// if err != nil { log.Fatal(err) }
+	var db *gorm.DB // <- replace with your initialized DB
+
 	r.GET("/users", func(c *gin.Context) {
-		// Simulate a database query
-		var query *bun.SelectQuery // This would be your actual bun query
+		// Start from a GORM query
+		query := db.Model(&User{})
 
 		// Create filter with struct-first error handling
 		result := filter.New(c, query).
 			AllowFields("name", "email", "age", "status").
 			AllowSorts("name", "age", "created_at").
-			Apply().
-			ApplySort()
+			Apply()
 
 		// Advanced struct-first error handling with custom logic
-		if result.HasErrors() {
+		if result.OK() {
 			errors := result.GetErrors()
 
 			// Example 1: Custom error categorization
@@ -93,25 +100,34 @@ func main() {
 			return
 		}
 
-		// Success path - use the validated query
+		// Success path - use the validated query (*gorm.DB)
 		finalQuery := result.Query()
-		_ = finalQuery
+
+		_ = finalQuery // Use the final query as needed
+
+		// Execute your query here if desired:
+		// var users []User
+		// if err := finalQuery.Find(&users).Error; err != nil {
+		//     c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "query failed"})
+		//     return
+		// }
 
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Users filtered successfully with custom error handling",
 			"success": true,
+			// "data":    users,
 		})
 	})
 
 	// Example with internationalization/translation ready
 	r.GET("/users/i18n", func(c *gin.Context) {
-		var query *bun.SelectQuery
+		query := db.Model(&User{})
 
 		result := filter.New(c, query).
 			AllowFields("name", "email").
 			Apply()
 
-		if result.HasErrors() {
+		if result.OK() {
 			translatedErrors := translateErrors(result.GetErrors(), "en")
 			c.JSON(http.StatusBadRequest, translatedErrors)
 			return

@@ -1,10 +1,13 @@
+// errors.go
 package filter
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
 
+// ErrorType for grouping error families
 type ErrorType string
 
 const (
@@ -15,94 +18,203 @@ const (
 	ErrorTypeInternal      ErrorType = "internal_error"
 )
 
+// ErrorCode enumerates machine-friendly codes for routing/i18n
+type ErrorCode string
+
+const (
+	CodeFilterValidation ErrorCode = "FILTER_VALIDATION_ERROR"
+	CodeFilterParsing    ErrorCode = "FILTER_PARSING_ERROR"
+	CodeFilterConfig     ErrorCode = "FILTER_CONFIGURATION_ERROR"
+	CodeFilterDatabase   ErrorCode = "FILTER_DATABASE_ERROR"
+	CodeFilterInternal   ErrorCode = "FILTER_INTERNAL_ERROR"
+)
+
+// FilterError is a structured error suitable for programmatic handling and JSON output.
 type FilterError struct {
-	// Group interface first (16 bytes, pointer-aligned)
-	InternalErr error `json:"-"` // 16 bytes (interface: type+data pointers)
-	// Group strings together (16 bytes each, pointer-aligned)
-	Type     ErrorType `json:"type"`               // 16 bytes (string: ptr+len)
-	Message  string    `json:"message"`            // 16 bytes (string: ptr+len)
-	Field    string    `json:"field,omitempty"`    // 16 bytes (string: ptr+len)
-	Operator string    `json:"operator,omitempty"` // 16 bytes (string: ptr+len)
-	Value    string    `json:"value,omitempty"`    // 16 bytes (string: ptr+len)
-	Code     string    `json:"code"`               // 16 bytes (string: ptr+len)
-	// Slice at end (24 bytes, but ends with alignment padding)
-	Suggestions []string `json:"suggestions,omitempty"` // 24 bytes (slice header with ptr)
-	// Small int last (8 bytes)
-	HTTPStatus int `json:"-"` // 8 bytes (int)
+	// Interface first; allows wrapping without allocation copies
+	InternalErr error `json:"-"` // not serialized
+
+	// Stringy, i18n-friendly fields
+	Type     ErrorType `json:"type"`
+	Message  string    `json:"message"`
+	Field    string    `json:"field,omitempty"`
+	Operator string    `json:"operator,omitempty"`
+	Value    string    `json:"value,omitempty"`
+	Code     ErrorCode `json:"code"`
+
+	// UX helpers
+	Suggestions []string `json:"suggestions,omitempty"`
+
+	// Transport concern (kept here for convenience)
+	HTTPStatus int `json:"-"`
 }
 
-// Converts the error to a readable string for logging/debugging
+// Error implements the standard error interface.
 func (e *FilterError) Error() string {
-	if e.Field != "" && e.Operator != "" {
+	switch {
+	case e.Field != "" && e.Operator != "":
 		return fmt.Sprintf("%s: %s (field: %s, operator: %s)", e.Type, e.Message, e.Field, e.Operator)
-	}
-	if e.Field != "" {
+	case e.Field != "":
 		return fmt.Sprintf("%s: %s (field: %s)", e.Type, e.Message, e.Field)
+	default:
+		return fmt.Sprintf("%s: %s", e.Type, e.Message)
 	}
-	return fmt.Sprintf("%s: %s", e.Type, e.Message)
 }
 
-func (e *FilterError) Unwrap() error {
-	return e.InternalErr
-}
+// Unwrap exposes the wrapped/internal error.
+func (e *FilterError) Unwrap() error { return e.InternalErr }
 
-func (e *FilterError) ToJSONResponse() map[string]interface{} {
-
-	errorData := map[string]interface{}{
+// ToJSONResponse renders a single-error payload.
+// Keep signature for backward compatibility.
+func (e *FilterError) ToJSONResponse() map[string]any {
+	errObj := map[string]any{
 		"type":    string(e.Type),
 		"message": e.Message,
-		"code":    e.Code,
+		"code":    string(e.Code),
 	}
-
 	if e.Field != "" {
-		errorData["field"] = e.Field
+		errObj["field"] = e.Field
 	}
 	if e.Operator != "" {
-		errorData["operator"] = e.Operator
+		errObj["operator"] = e.Operator
 	}
 	if e.Value != "" {
-		errorData["value"] = e.Value
+		errObj["value"] = e.Value
 	}
 	if len(e.Suggestions) > 0 {
-		errorData["suggestions"] = e.Suggestions
+		errObj["suggestions"] = e.Suggestions
 	}
+	return map[string]any{"error": errObj}
+}
 
-	return map[string]interface{}{
-		"error": errorData,
+// Status returns the HTTP status to use for this error.
+// Falls back based on type if HTTPStatus is zero.
+func (e *FilterError) Status() int {
+	if e.HTTPStatus != 0 {
+		return e.HTTPStatus
+	}
+	switch e.Type {
+	case ErrorTypeValidation, ErrorTypeParsing:
+		return http.StatusBadRequest
+	case ErrorTypeConfiguration, ErrorTypeInternal, ErrorTypeDatabase:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadRequest
 	}
 }
 
+// FilterErrors aggregates multiple FilterError values.
 type FilterErrors struct {
 	Errors []*FilterError `json:"errors"`
 }
 
-func (fe *FilterErrors) Error() string { // why do we need 2 errors?
-	if len(fe.Errors) == 0 {
+func (fe *FilterErrors) OK() bool {
+	return fe == nil || len(fe.Errors) == 0
+}
+
+// error implements error; summarizes count.
+func (fe *FilterErrors) Error() string {
+	n := len(fe.Errors)
+	switch n {
+	case 0:
 		return "no errors"
-	}
-	if len(fe.Errors) == 1 {
+	case 1:
 		return fe.Errors[0].Error()
+	default:
+		return fmt.Sprintf("multiple filter errors (%d errors)", n)
 	}
-	return fmt.Sprintf("multiple filter errors (%d errors)", len(fe.Errors))
 }
 
 func (fe *FilterErrors) Add(err *FilterError) {
+	if err == nil {
+		return
+	}
 	fe.Errors = append(fe.Errors, err)
 }
 
-func (fe *FilterErrors) HasErrors() bool {
-	return len(fe.Errors) > 0
+// AddAll appends a list of errors.
+func (fe *FilterErrors) AddAll(errs ...*FilterError) {
+	for _, e := range errs {
+		if e != nil {
+			fe.Errors = append(fe.Errors, e)
+		}
+	}
 }
 
-func (fe *FilterErrors) ToJSONResponse() map[string]interface{} {
-	errors := make([]map[string]interface{}, len(fe.Errors))
-	for i, err := range fe.Errors {
-		errors[i] = err.ToJSONResponse()["error"].(map[string]interface{})
+// Merge appends errors from another FilterErrors.
+func (fe *FilterErrors) Merge(other *FilterErrors) {
+	if other == nil || len(other.Errors) == 0 {
+		return
 	}
-	return map[string]interface{}{
-		"errors": errors,
-	}
+	fe.Errors = append(fe.Errors, other.Errors...)
 }
+
+// HasErrors indicates any error present.
+func (fe *FilterErrors) HasErrors() bool { return len(fe.Errors) > 0 }
+
+// Len returns the number of errors.
+func (fe *FilterErrors) Len() int { return len(fe.Errors) }
+
+// First returns the first error or nil.
+func (fe *FilterErrors) First() *FilterError {
+	if len(fe.Errors) == 0 {
+		return nil
+	}
+	return fe.Errors[0]
+}
+
+// Status derives an HTTP status for an error list.
+// If mixed types, prefer 400 for client issues else 500.
+func (fe *FilterErrors) Status() int {
+	if len(fe.Errors) == 0 {
+		return http.StatusOK
+	}
+	// If any server-side error appears, prefer 500.
+	hasClient := false
+	for _, e := range fe.Errors {
+		st := e.Status()
+		if st >= 500 {
+			return http.StatusInternalServerError
+		}
+		if st == http.StatusBadRequest {
+			hasClient = true
+		}
+	}
+	if hasClient {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+// ToJSONResponse renders a multi-error response.
+// Keeps the shape from the existing implementation.
+func (fe *FilterErrors) ToJSONResponse() map[string]any {
+	arr := make([]map[string]any, 0, len(fe.Errors))
+	for _, e := range fe.Errors {
+		// Avoid type assertions by building the inner object directly
+		item := map[string]any{
+			"type":    string(e.Type),
+			"message": e.Message,
+			"code":    string(e.Code),
+		}
+		if e.Field != "" {
+			item["field"] = e.Field
+		}
+		if e.Operator != "" {
+			item["operator"] = e.Operator
+		}
+		if e.Value != "" {
+			item["value"] = e.Value
+		}
+		if len(e.Suggestions) > 0 {
+			item["suggestions"] = e.Suggestions
+		}
+		arr = append(arr, item)
+	}
+	return map[string]any{"errors": arr}
+}
+
+// Convenience helpers / constructors (backward-compatible)
 
 func NewValidationError(field, operator, value, message string, suggestions ...string) *FilterError {
 	return &FilterError{
@@ -111,7 +223,7 @@ func NewValidationError(field, operator, value, message string, suggestions ...s
 		Field:       field,
 		Operator:    operator,
 		Value:       value,
-		Code:        "FILTER_VALIDATION_ERROR",
+		Code:        CodeFilterValidation,
 		HTTPStatus:  http.StatusBadRequest,
 		Suggestions: suggestions,
 	}
@@ -123,7 +235,7 @@ func NewParsingError(field, value, message string, internalErr error) *FilterErr
 		Message:     message,
 		Field:       field,
 		Value:       value,
-		Code:        "FILTER_PARSING_ERROR",
+		Code:        CodeFilterParsing,
 		HTTPStatus:  http.StatusBadRequest,
 		InternalErr: internalErr,
 	}
@@ -133,7 +245,7 @@ func NewConfigurationError(message string, suggestions ...string) *FilterError {
 	return &FilterError{
 		Type:        ErrorTypeConfiguration,
 		Message:     message,
-		Code:        "FILTER_CONFIGURATION_ERROR",
+		Code:        CodeFilterConfig,
 		HTTPStatus:  http.StatusInternalServerError,
 		Suggestions: suggestions,
 	}
@@ -143,7 +255,7 @@ func NewDatabaseError(message string, internalErr error) *FilterError {
 	return &FilterError{
 		Type:        ErrorTypeDatabase,
 		Message:     message,
-		Code:        "FILTER_DATABASE_ERROR",
+		Code:        CodeFilterDatabase,
 		HTTPStatus:  http.StatusInternalServerError,
 		InternalErr: internalErr,
 	}
@@ -153,16 +265,15 @@ func NewInternalError(message string, internalErr error) *FilterError {
 	return &FilterError{
 		Type:        ErrorTypeInternal,
 		Message:     message,
-		Code:        "FILTER_INTERNAL_ERROR",
+		Code:        CodeFilterInternal,
 		HTTPStatus:  http.StatusInternalServerError,
 		InternalErr: internalErr,
 	}
 }
 
 func NewFieldNotAllowedError(field string, allowedFields []string) *FilterError {
-	suggestions := make([]string, len(allowedFields))
-	copy(suggestions, allowedFields)
-
+	// Copy to avoid external slice mutations showing up in error payload
+	suggestions := append([]string(nil), allowedFields...)
 	return NewValidationError(
 		field, "", "",
 		fmt.Sprintf("Field '%s' is not allowed for filtering", field),
@@ -175,7 +286,6 @@ func NewOperatorNotAllowedError(field, operator string, allowedOperators []Claus
 	for i, op := range allowedOperators {
 		suggestions[i] = string(op)
 	}
-
 	return NewValidationError(
 		field, operator, "",
 		fmt.Sprintf("Operator '%s' is not allowed for field '%s'", operator, field),
@@ -190,7 +300,6 @@ func NewInvalidOperatorError(operator string) *FilterError {
 		string(LessThan), string(LessThanOrEq), string(In), string(NotIn),
 		string(IsNull), string(IsNotNull), string(Between), string(NotBetween),
 	}
-
 	return NewValidationError(
 		"", operator, "",
 		fmt.Sprintf("Invalid operator '%s'", operator),
@@ -223,12 +332,31 @@ func NewInvalidBetweenValueError(field, value string) *FilterError {
 }
 
 func NewSortFieldNotAllowedError(field string, allowedFields []string) *FilterError {
-	suggestions := make([]string, len(allowedFields))
-	copy(suggestions, allowedFields)
-
+	suggestions := append([]string(nil), allowedFields...)
 	return NewValidationError(
 		field, "", "",
 		fmt.Sprintf("Sort field '%s' is not allowed", field),
 		suggestions...,
 	)
+}
+
+// Helper to combine a generic error into a FilterError when needed.
+func WrapAsInternalFilterError(msg string, err error) *FilterError {
+	return &FilterError{
+		Type:        ErrorTypeInternal,
+		Message:     msg,
+		Code:        CodeFilterInternal,
+		HTTPStatus:  http.StatusInternalServerError,
+		InternalErr: err,
+	}
+}
+
+// Utility to check if any underlying error matches a target (errors.Is)
+func (fe *FilterErrors) AnyIs(target error) bool {
+	for _, e := range fe.Errors {
+		if errors.Is(e, target) || (e.InternalErr != nil && errors.Is(e.InternalErr, target)) {
+			return true
+		}
+	}
+	return false
 }

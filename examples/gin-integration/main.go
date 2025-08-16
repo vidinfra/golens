@@ -1,49 +1,59 @@
-// Gin Integration Example - Updated for Struct-First Error Handling
-//
-// Production-ready example showing:
-// 1. Real Gin + Bun ORM integration
-// 2. Comprehensive filtering with field configurations
-// 3. Advanced error handling with logging
-// 4. Field-specific permission logic
-// 5. Both simple and complex filtering endpoints
 package main
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
 	"github.com/vidinfra/golens/filter"
 )
 
 type Product struct {
-	Name        string  `json:"name" bun:"name"`
-	Description string  `json:"description" bun:"description"`
-	Category    string  `json:"category" bun:"category"`
-	Status      string  `json:"status" bun:"status"`
-	CreatedAt   string  `json:"created_at" bun:"created_at"`
-	ID          int     `json:"id" bun:"id,pk,autoincrement"`
-	Price       float64 `json:"price" bun:"price"`
+	Name        string  `json:"name"        gorm:"column:name"`
+	Description string  `json:"description" gorm:"column:description"`
+	Category    string  `json:"category"    gorm:"column:category"`
+	Status      string  `json:"status"      gorm:"column:status"`
+	CreatedAt   string  `json:"created_at"  gorm:"column:created_at"`
+	ID          int     `json:"id"          gorm:"column:id;primaryKey;autoIncrement"`
+	Price       float64 `json:"price"       gorm:"column:price"`
 }
 
-func main() {
-	// Setup database connection (example)
-	dsn := "postgres://username:password@localhost:5432/database?sslmode=disable"
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-	db := bun.NewDB(sqldb, pgdialect.New())
+// If your table name isn't the default pluralization, uncomment:
+// func (Product) TableName() string { return "products" }
 
+type User struct {
+	Name      string `json:"name"       gorm:"column:name"`
+	Email     string `json:"email"      gorm:"column:email"`
+	Status    string `json:"status"     gorm:"column:status"`
+	CreatedAt string `json:"created_at" gorm:"column:created_at"`
+	ID        int    `json:"id"         gorm:"column:id;primaryKey;autoIncrement"`
+}
+
+// func (User) TableName() string { return "users" }
+
+// -------------------------------------
+
+func main() {
 	r := gin.Default()
+
+	// ----- GORM DB Init (Postgres example) -----
+	// Replace with your own DSN/driver as needed
+	dsn := "host=localhost user=username password=password dbname=database port=5432 sslmode=disable TimeZone=UTC"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("failed to connect database: %v", err)
+	}
+	// -------------------------------------------
 
 	// Example endpoint with comprehensive filtering
 	r.GET("/products", func(c *gin.Context) {
-		// Start with base query
-		query := db.NewSelect().Model((*Product)(nil))
+		// Start with base GORM query
+		query := db.Model(&Product{})
 
-		// Define filter configurations
+		// Define filter configurations (same semantics as your Bun example)
 		configs := []filter.FilterConfig{
 			filter.AllowedFilter("name", filter.Equals, filter.Contains, filter.StartsWith, filter.EndsWith),
 			filter.AllowedFilter("description", filter.Contains),
@@ -57,11 +67,10 @@ func main() {
 		result := filter.New(c, query).
 			AllowConfigs(configs...).
 			AllowSorts("name", "price", "created_at", "category").
-			Apply().
-			ApplySort()
+			Apply()
 
 		// Struct-first error handling with direct access to error details
-		if result.HasErrors() {
+		if result.OK() {
 			errors := result.GetErrors()
 
 			// Log all errors for debugging
@@ -70,17 +79,16 @@ func main() {
 					err.Message, err.Field, err.Code, err.Type)
 			}
 
-			// Option 1: Use built-in JSON conversion for quick response
+			// Quick response via helper
 			c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
 			return
 		}
 
-		finalQuery := result.Query()
+		finalQuery := result.Query() // *gorm.DB
 
 		// Execute the query
 		var products []Product
-		err := finalQuery.Scan(c.Request.Context(), &products)
-		if err != nil {
+		if err := finalQuery.Find(&products).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"errors": []map[string]interface{}{
@@ -103,15 +111,16 @@ func main() {
 
 	// Example with simple field allowlist and struct-first error handling
 	r.GET("/users", func(c *gin.Context) {
-		query := db.NewSelect().Model((*User)(nil))
+		query := db.Model(&User{})
 
+		// If your library has AllowAll, use it; otherwise do AllowFields+AllowSorts explicitly:
 		result := filter.New(c, query).
-			AllowAll("name", "email", "status", "created_at").
-			Apply().
-			ApplySort()
+			AllowFields("name", "email", "status", "created_at").
+			AllowSorts("name", "created_at").
+			Apply()
 
 		// Direct struct access for custom error handling
-		if result.HasErrors() {
+		if result.OK() {
 			errors := result.GetErrors()
 
 			// Custom logic based on error types
@@ -131,11 +140,10 @@ func main() {
 			return
 		}
 
-		finalQuery := result.Query()
+		finalQuery := result.Query() // *gorm.DB
 
 		var users []User
-		err := finalQuery.Scan(c.Request.Context(), &users)
-		if err != nil {
+		if err := finalQuery.Find(&users).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"errors": []map[string]interface{}{
@@ -156,12 +164,4 @@ func main() {
 	})
 
 	r.Run(":8080")
-}
-
-type User struct {
-	Name      string `json:"name" bun:"name"`
-	Email     string `json:"email" bun:"email"`
-	Status    string `json:"status" bun:"status"`
-	CreatedAt string `json:"created_at" bun:"created_at"`
-	ID        int    `json:"id" bun:"id,pk,autoincrement"`
 }

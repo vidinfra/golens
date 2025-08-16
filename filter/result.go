@@ -1,17 +1,17 @@
 package filter
 
 import (
-	"github.com/uptrace/bun"
+	"gorm.io/gorm"
 )
 
 // Result represents the outcome of filter operations
 type Result struct {
-	Query   *bun.SelectQuery `json:"-"`
-	Errors  *FilterErrors    `json:"errors,omitempty"`
-	Success bool             `json:"success"`
+	Query   *gorm.DB      `json:"-"`
+	Errors  *FilterErrors `json:"errors,omitempty"`
+	Success bool          `json:"success"`
 }
 
-func NewResult(query *bun.SelectQuery) *Result {
+func NewResult(query *gorm.DB) *Result {
 	return &Result{
 		Query:   query,
 		Errors:  &FilterErrors{},
@@ -46,32 +46,31 @@ func (r *Result) AddErrors(errors ...*FilterError) {
 	}
 }
 
-func (r *Result) HasErrors() bool {
-	return r.Errors != nil && r.Errors.HasErrors()
+// ✅ Unified: just OK()
+func (r *Result) OK() bool {
+	return r.Errors == nil || !r.Errors.HasErrors()
 }
 
-func (r *Result) GetQuery() *bun.SelectQuery {
-	if r.Success {
+func (r *Result) GetQuery() *gorm.DB {
+	if r.OK() {
 		return r.Query
 	}
 	return nil
 }
 
 func (r *Result) GetFirstError() *FilterError {
-	if r.HasErrors() && len(r.Errors.Errors) > 0 {
-		return r.Errors.Errors[0]
+	if r.OK() || len(r.Errors.Errors) == 0 {
+		return nil
 	}
-	return nil
+	return r.Errors.Errors[0]
 }
 
-func (r *Result) ToJSONResponse() map[string]interface{} {
-	response := map[string]interface{}{
-		"success": r.Success,
+func (r *Result) ToJSONResponse() map[string]any {
+	response := map[string]any{
+		"success": r.OK(),
 	}
-
-	if r.HasErrors() {
+	if !r.OK() {
 		response["errors"] = r.Errors.ToJSONResponse()["errors"]
 	}
-
 	return response
 }

@@ -5,81 +5,103 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/uptrace/bun"
+	"gorm.io/gorm"
 )
 
-// Applier handles applying filters to database queries
+// Applier handles applying filters and sort to database queries
 type Applier struct {
 	validator *Validator
 }
 
 func NewApplier(validator *Validator) *Applier {
-	return &Applier{
-		validator: validator,
-	}
+	return &Applier{validator: validator}
 }
 
 func (a *Applier) validateFilter(filter Filter) *FilterError {
 	if a.validator != nil {
 		return a.validator.ValidateFilter(filter)
 	}
-
 	if !filter.Operator.IsValid() {
 		return NewInvalidOperatorError(string(filter.Operator))
 	}
-
 	return nil
 }
 
-func (a *Applier) ApplyFilters(q *bun.SelectQuery, filters []Filter) (*Result, error) {
-	result := NewResult(q)
-
-	for _, filter := range filters {
-		if err := a.validateFilter(filter); err != nil {
-			result.AddError(err)
-			continue
-		}
-
-		if a.validator != nil && !a.validator.IsFilterAllowed(filter) {
-			result.AddError((NewFieldNotAllowedError(filter.Field, a.validator.allowedFields)))
-			continue
-		}
-
-		newQuery, err := a.applyFilter(result.Query, filter)
-		if err != nil {
-			result.AddError(err)
-			continue
-		}
-		result.Query = newQuery
+// Apply runs BOTH filters and sort in one shot.
+// Public entrypoint: call this from Builder.Apply().
+func (a *Applier) Apply(q *gorm.DB, filters []Filter, sortParam string, allowedSorts []string) (*Result, error) {
+	// 1) Apply filters
+	res, err := a.applyFilters(q, filters)
+	if err != nil && res != nil && !res.OK() {
+		return res, res.Errors
 	}
 
-	if result.HasErrors() {
+	// 2) Apply sorting
+	db, sortErrs := a.applySort(res.Query, sortParam, allowedSorts)
+	if len(sortErrs) > 0 {
+		for _, e := range sortErrs {
+			res.AddError(e)
+		}
+	}
+
+	res.Query = db
+	if !res.OK() {
+		return res, res.Errors
+	}
+	return res, nil
+}
+
+// --- private helpers ---
+
+// applyFilters applies the provided filters in sequence.
+func (a *Applier) applyFilters(q *gorm.DB, filters []Filter) (*Result, error) {
+	result := NewResult(q)
+
+	for _, f := range filters {
+		if err := a.validateFilter(f); err != nil {
+			result.AddError(err)
+			continue
+		}
+		if a.validator != nil && !a.validator.IsFilterAllowed(f) {
+			result.AddError(NewFieldNotAllowedError(f.Field, a.validator.allowedFields))
+			continue
+		}
+
+		newQ, ferr := a.applyFilter(result.Query, f)
+		if ferr != nil {
+			result.AddError(ferr)
+			continue
+		}
+		result.Query = newQ
+	}
+
+	if !result.OK() {
 		return result, result.Errors
 	}
 	return result, nil
 }
 
-func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts []string) (*bun.SelectQuery, []*FilterError) {
-	var errors []*FilterError
-
+// applySort applies a comma-separated sort spec (e.g., "-created_at,name").
+// Pass allowedSorts to restrict which columns can be sorted.
+func (a *Applier) applySort(q *gorm.DB, sortParam string, allowedSorts []string) (*gorm.DB, []*FilterError) {
+	var errs []*FilterError
 	if sortParam == "" {
 		return q, nil
 	}
 
-	for s := range strings.SplitSeq(sortParam, ",") {
+	for _, s := range strings.Split(sortParam, ",") {
 		sortField := strings.TrimSpace(s)
 		if sortField == "" {
 			continue
 		}
 
-		// Check for descending order (-)
 		desc := strings.HasPrefix(sortField, "-")
 		if desc {
 			sortField = sortField[1:]
 		}
 
 		if allowedSorts != nil && !slices.Contains(allowedSorts, sortField) {
-			errors = append(errors, NewSortFieldNotAllowedError(sortField, allowedSorts))
+			errs = append(errs, NewSortFieldNotAllowedError(sortField, allowedSorts))
 			continue
 		}
 
@@ -89,57 +111,79 @@ func (a *Applier) ApplySort(q *bun.SelectQuery, sortParam string, allowedSorts [
 			q = q.Order(sortField + " ASC")
 		}
 	}
-
-	return q, errors
+	return q, errs
 }
 
-func (a *Applier) applyFilter(q *bun.SelectQuery, filter Filter) (*bun.SelectQuery, *FilterError) {
+// applyFilter applies a single filter condition.
+func (a *Applier) applyFilter(q *gorm.DB, filter Filter) (*gorm.DB, *FilterError) {
 	field := filter.Field
 	value := filter.Value
 
 	switch filter.Operator {
 	case Equals:
-		q = q.Where("? = ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s = ?", field), value)
+
 	case NotEquals:
-		q = q.Where("? != ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s <> ?", field), value)
+
 	case Contains:
 		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value)+"%", false)
+
 	case NotContains:
 		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value)+"%", true)
+
 	case StartsWith:
 		q = a.applyCaseInsensitiveLike(q, field, fmt.Sprintf("%v", value)+"%", false)
+
 	case EndsWith:
 		q = a.applyCaseInsensitiveLike(q, field, "%"+fmt.Sprintf("%v", value), false)
+
 	case GreaterThan:
-		q = q.Where("? > ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s > ?", field), value)
+
 	case GreaterThanOrEq:
-		q = q.Where("? >= ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s >= ?", field), value)
+
 	case LessThan:
-		q = q.Where("? < ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s < ?", field), value)
+
 	case LessThanOrEq:
-		q = q.Where("? <= ?", bun.Ident(field), value)
+		q = q.Where(fmt.Sprintf("%s <= ?", field), value)
+
 	case In:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
-		q = q.Where("? IN (?)", bun.Ident(field), bun.In(values))
+		q = q.Where(fmt.Sprintf("%s IN ?", field), values)
+
 	case NotIn:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
-		q = q.Where("? NOT IN (?)", bun.Ident(field), bun.In(values))
+		q = q.Where(fmt.Sprintf("%s NOT IN ?", field), values)
+
 	case IsNull:
-		q = q.Where("? IS NULL", bun.Ident(field))
+		q = q.Where(fmt.Sprintf("%s IS NULL", field))
+
 	case IsNotNull:
-		q = q.Where("? IS NOT NULL", bun.Ident(field))
+		q = q.Where(fmt.Sprintf("%s IS NOT NULL", field))
+
 	case Between:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
 		if len(values) != 2 {
 			return q, NewInvalidBetweenValueError(field, fmt.Sprintf("%v", value))
 		}
-		q = q.Where("? BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
+		q = q.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), values[0], values[1])
+
 	case NotBetween:
 		values := parseCommaSeparatedValues(fmt.Sprintf("%v", value))
 		if len(values) != 2 {
-			return q, NewValidationError(field, string(NotBetween), fmt.Sprintf("%v", value), "Not between operator requires exactly two comma-separated values", "Use format: 'value1,value2' (e.g., '10,20')")
+			return q, NewValidationError(
+				field,
+				string(NotBetween),
+				fmt.Sprintf("%v", value),
+				"Not between operator requires exactly two comma-separated values",
+				"Use format: 'value1,value2' (e.g., '10,20')",
+			)
 		}
-		q = q.Where("? NOT BETWEEN ? AND ?", bun.Ident(field), values[0], values[1])
+		q = q.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), values[0], values[1])
+
 	default:
 		return q, NewInvalidOperatorError(string(filter.Operator))
 	}
@@ -151,14 +195,11 @@ func parseCommaSeparatedValues(value string) []string {
 	if value == "" {
 		return []string{}
 	}
-
 	parts := strings.Split(value, ",")
 	result := make([]string, len(parts))
-
 	for i, part := range parts {
 		result[i] = strings.TrimSpace(part)
 	}
-
 	return result
 }
 
@@ -172,48 +213,47 @@ const (
 	Unknown    DatabaseDriver = "unknown"
 )
 
-func detectDatabaseDriver(q *bun.SelectQuery) DatabaseDriver {
-	if q == nil {
+func detectDatabaseDriver(db *gorm.DB) DatabaseDriver {
+	if db == nil || db.Dialector == nil {
 		return Unknown
 	}
-
-	defer func() {
-		_ = recover() // Intentionally ignore panic recovery result
-	}()
-
-	switch q.Dialect().Name().String() {
-	case "pg":
+	name := strings.ToLower(db.Dialector.Name())
+	switch {
+	case strings.Contains(name, "postgres"):
 		return PostgreSQL
-	case "mysql":
+	case strings.Contains(name, "mysql"):
 		return MySQL
-	case "sqlite":
+	case strings.Contains(name, "sqlite"):
 		return SQLite
 	default:
 		return Unknown
 	}
 }
 
-func (a *Applier) applyCaseInsensitiveLike(q *bun.SelectQuery, field, pattern string, negate bool) *bun.SelectQuery {
+func (a *Applier) applyCaseInsensitiveLike(q *gorm.DB, field, pattern string, negate bool) *gorm.DB {
 	switch detectDatabaseDriver(q) {
 	case PostgreSQL:
 		if negate {
-			return q.Where("? NOT ILIKE ?", bun.Ident(field), pattern)
+			return q.Where(fmt.Sprintf("%s NOT ILIKE ?", field), pattern)
 		}
-		return q.Where("? ILIKE ?", bun.Ident(field), pattern)
+		return q.Where(fmt.Sprintf("%s ILIKE ?", field), pattern)
+
 	case MySQL:
 		if negate {
-			return q.Where("? NOT LIKE ? COLLATE utf8mb4_general_ci", bun.Ident(field), pattern)
+			return q.Where(fmt.Sprintf("%s NOT LIKE ? COLLATE utf8mb4_general_ci", field), pattern)
 		}
-		return q.Where("? LIKE ? COLLATE utf8mb4_general_ci", bun.Ident(field), pattern)
+		return q.Where(fmt.Sprintf("%s LIKE ? COLLATE utf8mb4_general_ci", field), pattern)
+
 	case SQLite:
 		if negate {
-			return q.Where("? NOT LIKE ?", bun.Ident(field), pattern)
+			return q.Where(fmt.Sprintf("%s NOT LIKE ?", field), pattern)
 		}
-		return q.Where("? LIKE ?", bun.Ident(field), pattern)
+		return q.Where(fmt.Sprintf("%s LIKE ?", field), pattern)
+
 	default:
 		if negate {
-			return q.Where("LOWER(?) NOT LIKE LOWER(?)", bun.Ident(field), pattern)
+			return q.Where(fmt.Sprintf("LOWER(%s) NOT LIKE LOWER(?)", field), pattern)
 		}
-		return q.Where("LOWER(?) LIKE LOWER(?)", bun.Ident(field), pattern)
+		return q.Where(fmt.Sprintf("LOWER(%s) LIKE LOWER(?)", field), pattern)
 	}
 }
