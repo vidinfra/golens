@@ -1,48 +1,40 @@
 # Changelog
 
-## [v0.2.0] - 2025-08-16
+All notable changes to this project will be documented in this file.
 
-### ✨ Features
-- **Switched ORM**: Migrated from **Bun ORM** to **GORM** for broader adoption.
-- **Struct-first Error Handling**
-  - No more panics — errors are returned as structured objects.
-  - `Result.OK()` replaces `HasErrors()` for clarity.
-  - Built-in JSON response helpers (`ToJSONResponse`) for quick API integration.
-- **Comprehensive Operators**
-  - Full support for operators: `eq`, `ne`, `like`, `not-like`, `starts-with`, `ends-with`, `gt`, `gte`, `lt`, `lte`, `in`, `not-in`, `null`, `not-null`, `between`, `not-between`.
-- **Sorting Improvements**
-  - Field validation for `sort` params.
-  - Support for ascending/descending syntax (`sort=-created_at,name`).
-- **Fluent Builder API**
-  - `AllowFields`, `AllowSorts`, `AllowAll`, `AllowConfigs`.
-  - Cleaner chaining with `Apply()`.
-
-### 🛠 Improvements
-- Optimized parsing logic (`Parser`) for JSON API + simple filter formats.
-- Unified **Apply** pipeline: filters and sorting in one pass.
-- Case-insensitive `LIKE` support across **Postgres, MySQL, SQLite** with dialect detection.
-- Added helper functions for cleaner validation (`Validator`).
-
-### 🧪 Testing
-- Migrated to **stretchr/testify** for testing.
-- Added full test coverage for every operator.
-- Improved test readability and error assertions.
-
-### 📚 Documentation
-- Updated `README.md` with:
-  - New **Quick Start** using **GORM**.
-  - Examples with **SQLite in-memory DB**.
-  - Error handling patterns (`struct-first`).
-  - Migration guide from `v1.x` → `v2.x`.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-⚡️ **Upgrade Note**:
-`HasErrors()` has been removed. Use:
+## [v0.2.1] - 2025-08-16
+### Fixed
+- Fixed empty branch handling (`fix: empty branch`)
 
-```go
-if !result.OK() {
-    c.JSON(http.StatusBadRequest, result.Result().ToJSONResponse())
-    return
-}
-```
+---
+
+## [v0.2.0] - 2025-08-16
+### Added
+- Switched ORM integration from Bun to GORM
+- Implemented full operator support with validation
+- Added structured error handling with `Result` type
+- Introduced `OK()` method for cleaner checks
+- Added test coverage for all operators using `stretchr/testify`
+
+### Changed
+- Refactored `Builder` API (removed `HasErrors()`, replaced with `OK()`)
+- Improved error messages and JSON response format
+- Updated example app to use SQLite in-memory DB
+
+### Removed
+- Removed Bun-specific code
+- Removed `HasErrors()` method
+
+---
+
+## [v0.1.0] - 2025-08-10
+### Added
+- Initial release with Bun ORM integration
+- Basic filtering and sorting
+- JSON API and simple filter formats
+- Error handling with validation
