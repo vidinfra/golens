@@ -12,10 +12,10 @@ import (
 )
 
 type User struct {
-	ID     int    `json:"id"     gorm:"column:id;primaryKey;autoIncrement"`
 	Name   string `json:"name"   gorm:"column:name"`
 	Email  string `json:"email"  gorm:"column:email"`
 	Status string `json:"status" gorm:"column:status"`
+	ID     int    `json:"id"     gorm:"column:id;primaryKey;autoIncrement"`
 	Age    int    `json:"age"    gorm:"column:age"`
 }
 
